@@ -34,8 +34,8 @@ class Z21RuntimeData:
     """Runtime data for Z21 integration."""
 
     station: Z21Station
-    serial_number: int
-    firmware_version: tuple[int, int]
+    serial_number: int | None = None
+    firmware_version: tuple[int, int] | None = None
     locomotives: dict[int, LocoDevice] = field(default_factory=dict)
 
     def get_loco_device_id(self, entry_id: str, address: int) -> str:
