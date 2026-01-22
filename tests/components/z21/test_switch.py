@@ -3,6 +3,7 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from homeassistant.components.switch import DOMAIN as SWITCH_DOMAIN
+from homeassistant.components.z21.const import DOMAIN
 from homeassistant.const import (
     ATTR_ENTITY_ID,
     SERVICE_TURN_OFF,
@@ -11,6 +12,7 @@ from homeassistant.const import (
     STATE_ON,
 )
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import device_registry as dr
 
 from tests.common import MockConfigEntry
 
@@ -170,3 +172,38 @@ async def test_switch_state_update(
 
     state = hass.states.get(entity_id)
     assert state.state == STATE_OFF
+
+
+async def test_device_info_serial_number(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_z21_station: AsyncMock,
+    device_registry: dr.DeviceRegistry,
+) -> None:
+    """Test that device registry entry has correct serial number."""
+    mock_config_entry.add_to_hass(hass)
+
+    with patch(
+        "homeassistant.components.z21.Z21Station.connect",
+        return_value=mock_z21_station,
+    ):
+        await hass.config_entries.async_setup(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+
+    # Trigger loco discovery
+    callback = mock_z21_station.subscribe_loco_state.call_args[0][0]
+    mock_loco_state = MagicMock()
+    mock_loco_state.address = 123
+    mock_loco_state.speed_percentage = 0.0
+    mock_loco_state.functions = [False] * 32
+
+    callback(mock_loco_state)
+    await hass.async_block_till_done()
+
+    # Get the device
+    device = device_registry.async_get_device(
+        identifiers={(DOMAIN, f"{mock_config_entry.entry_id}_123")}
+    )
+
+    assert device is not None
+    assert device.serial_number == "123"

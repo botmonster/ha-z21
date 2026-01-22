@@ -30,13 +30,16 @@ class Z21LocoEntity(Entity):
         self._address = loco_device.address
 
         device_id = runtime_data.get_loco_device_id(entry_id, self._address)
-        self._attr_device_info = DeviceInfo(
+        device_info = DeviceInfo(
             identifiers={(DOMAIN, device_id)},
             name=f"Locomotive {self._address}",
             manufacturer="DCC",
             model="Locomotive",
-            via_device=(DOMAIN, str(runtime_data.serial_number)),
+            serial_number=str(self._address),
         )
+        if runtime_data.serial_number is not None:
+            device_info["via_device"] = (DOMAIN, str(runtime_data.serial_number))
+        self._attr_device_info = device_info
 
     @callback
     def _handle_state_update(self) -> None:
