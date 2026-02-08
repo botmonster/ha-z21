@@ -85,13 +85,6 @@ class LocoFunctionSwitch(Z21LocoEntity, SwitchEntity):
         else:
             self._attr_entity_registry_enabled_default = False
 
-    @property
-    def name(self) -> str:
-        """Return the name of the function."""
-        if self._function_index == 0:
-            return "F0 (Headlights)"
-        return f"F{self._function_index}"
-
     async def _ensure_loco_control(self) -> Loco:
         """Ensure we have control of the locomotive."""
         if self._loco is None:
