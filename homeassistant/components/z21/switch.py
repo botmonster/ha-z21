@@ -75,6 +75,7 @@ class LocoFunctionSwitch(Z21LocoEntity, SwitchEntity):
         super().__init__(runtime_data, entry_id, loco_device)
         self._function_index = function_index
         self._attr_unique_id = f"{entry_id}_{self._address}_f{function_index}"
+        self.entity_id = f"switch.locomotive_{self._address}_f{function_index}"
         self._attr_translation_key = f"f{function_index}"
         self._loco: Loco | None = None
 

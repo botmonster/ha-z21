@@ -43,7 +43,7 @@ async def test_switch_discovery(
     await hass.async_block_till_done()
 
     # Verify F0 switch entity was created (enabled by default)
-    entity_id = "switch.locomotive_3_f0_headlights"
+    entity_id = "switch.locomotive_3_f0"
     state = hass.states.get(entity_id)
     assert state is not None
     assert state.state == STATE_OFF
@@ -75,7 +75,7 @@ async def test_switch_turn_on(
     callback(mock_loco_state)
     await hass.async_block_till_done()
 
-    entity_id = "switch.locomotive_3_f0_headlights"
+    entity_id = "switch.locomotive_3_f0"
 
     # Turn on
     await hass.services.async_call(
@@ -114,7 +114,7 @@ async def test_switch_turn_off(
     callback(mock_loco_state)
     await hass.async_block_till_done()
 
-    entity_id = "switch.locomotive_3_f0_headlights"
+    entity_id = "switch.locomotive_3_f0"
 
     # Turn off
     await hass.services.async_call(
@@ -153,7 +153,7 @@ async def test_switch_state_update(
     callback(mock_loco_state)
     await hass.async_block_till_done()
 
-    entity_id = "switch.locomotive_3_f0_headlights"
+    entity_id = "switch.locomotive_3_f0"
     state = hass.states.get(entity_id)
     assert state.state == STATE_OFF
 
