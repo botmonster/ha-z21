@@ -14,6 +14,7 @@ from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 
+from .connection import Z21ConnectionManager
 from .const import (
     CONF_PORT,
     DEFAULT_PORT,
@@ -45,6 +46,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: Z21ConfigEntry) -> bool:
     # Initialize runtime data with just the station instance
     runtime_data = Z21RuntimeData(station=station)
     entry.runtime_data = runtime_data
+
+    # Create connection manager for heartbeat monitoring and reconnection
+    connection_manager = Z21ConnectionManager(hass, entry, host, port, runtime_data)
 
     # Get device registry early for use in background task and restoration
     dev_reg = dr.async_get(hass)
@@ -110,6 +114,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: Z21ConfigEntry) -> bool:
         )
 
     station.subscribe_loco_state(handle_loco_state)
+    connection_manager.set_loco_state_callback(handle_loco_state)
 
     # Restore previously known locomotives from device registry
     z21_devices = dr.async_entries_for_config_entry(dev_reg, entry.entry_id)
@@ -161,7 +166,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: Z21ConfigEntry) -> bool:
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
+    # Start connection monitoring after platforms are set up
+    connection_manager.start()
+
+    # Stop connection manager before closing station (LIFO order)
     entry.async_on_unload(station.close)
+    entry.async_on_unload(connection_manager.stop)
 
     return True
 

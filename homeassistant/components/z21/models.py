@@ -37,6 +37,7 @@ class Z21RuntimeData:
     serial_number: int | None = None
     firmware_version: tuple[int, int] | None = None
     locomotives: dict[int, LocoDevice] = field(default_factory=dict)
+    available: bool = True
 
     def get_loco_device_id(self, entry_id: str, address: int) -> str:
         """Generate unique device ID for a locomotive."""

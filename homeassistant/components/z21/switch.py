@@ -86,6 +86,12 @@ class LocoFunctionSwitch(Z21LocoEntity, SwitchEntity):
         else:
             self._attr_entity_registry_enabled_default = False
 
+    @callback
+    def _handle_disconnected(self) -> None:
+        """Clear cached loco control on disconnect."""
+        self._loco = None
+        super()._handle_disconnected()
+
     async def _ensure_loco_control(self) -> Loco:
         """Ensure we have control of the locomotive."""
         if self._loco is None:

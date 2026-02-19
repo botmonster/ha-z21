@@ -7,7 +7,12 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity import Entity
 
-from .const import DOMAIN, SIGNAL_LOCO_STATE_UPDATE
+from .const import (
+    DOMAIN,
+    SIGNAL_LOCO_STATE_UPDATE,
+    SIGNAL_Z21_CONNECTED,
+    SIGNAL_Z21_DISCONNECTED,
+)
 from .models import LocoDevice, Z21RuntimeData
 
 
@@ -41,9 +46,24 @@ class Z21LocoEntity(Entity):
             device_info["via_device"] = (DOMAIN, str(runtime_data.serial_number))
         self._attr_device_info = device_info
 
+    @property
+    def available(self) -> bool:
+        """Return True if the Z21 station connection is healthy."""
+        return self._runtime_data.available
+
     @callback
     def _handle_state_update(self) -> None:
         """Handle state update from dispatcher."""
+        self.async_write_ha_state()
+
+    @callback
+    def _handle_connected(self) -> None:
+        """Handle Z21 connection restored."""
+        self.async_write_ha_state()
+
+    @callback
+    def _handle_disconnected(self) -> None:
+        """Handle Z21 connection lost."""
         self.async_write_ha_state()
 
     async def async_added_to_hass(self) -> None:
@@ -56,5 +76,19 @@ class Z21LocoEntity(Entity):
                     address=self._address,
                 ),
                 self._handle_state_update,
+            )
+        )
+        self.async_on_remove(
+            async_dispatcher_connect(
+                self.hass,
+                SIGNAL_Z21_CONNECTED.format(entry_id=self._entry_id),
+                self._handle_connected,
+            )
+        )
+        self.async_on_remove(
+            async_dispatcher_connect(
+                self.hass,
+                SIGNAL_Z21_DISCONNECTED.format(entry_id=self._entry_id),
+                self._handle_disconnected,
             )
         )
