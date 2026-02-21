@@ -144,4 +144,4 @@ class LocomotiveFan(Z21LocoEntity, FanEntity):
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Stop the locomotive."""
         loco = await self._ensure_loco_control()
-        await loco.stop()
+        await loco.stop(reverse=self._loco_device.reverse)

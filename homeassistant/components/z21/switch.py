@@ -165,7 +165,7 @@ class LocoEStopSwitch(Z21LocoEntity, SwitchEntity):
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Send emergency stop command."""
         loco = await self._ensure_loco_control()
-        await loco.estop()
+        await loco.estop(reverse=self._loco_device.reverse)
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         """No-op; estop cannot be cancelled via a DCC command."""

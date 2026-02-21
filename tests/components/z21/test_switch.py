@@ -242,7 +242,43 @@ async def test_estop_switch_turn_on(
         blocking=True,
     )
 
-    mock_loco.estop.assert_called_once()
+    mock_loco.estop.assert_called_once_with(reverse=False)
+
+
+async def test_estop_switch_turn_on_reverse(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_z21_station: AsyncMock,
+    mock_loco: AsyncMock,
+) -> None:
+    """Test turning on the estop switch in reverse sends emergency stop with reverse direction."""
+    mock_config_entry.add_to_hass(hass)
+
+    with patch(
+        "homeassistant.components.z21.Z21Station.connect",
+        return_value=mock_z21_station,
+    ):
+        await hass.config_entries.async_setup(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+
+    callback = mock_z21_station.subscribe_loco_state.call_args[0][0]
+    mock_loco_state = MagicMock()
+    mock_loco_state.address = 3
+    mock_loco_state.speed_percentage = 0.0
+    mock_loco_state.reverse = True
+    mock_loco_state.functions = [False] * 32
+
+    callback(mock_loco_state)
+    await hass.async_block_till_done()
+
+    await hass.services.async_call(
+        SWITCH_DOMAIN,
+        SERVICE_TURN_ON,
+        {ATTR_ENTITY_ID: "switch.locomotive_3_estop"},
+        blocking=True,
+    )
+
+    mock_loco.estop.assert_called_once_with(reverse=True)
 
 
 async def test_estop_switch_turn_off(

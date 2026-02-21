@@ -149,7 +149,42 @@ async def test_fan_turn_off(
         blocking=True,
     )
 
-    mock_loco.stop.assert_called_once()
+    mock_loco.stop.assert_called_once_with(reverse=False)
+
+
+async def test_fan_turn_off_reverse(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_z21_station: AsyncMock,
+    mock_loco: AsyncMock,
+) -> None:
+    """Test turning off fan in reverse stops locomotive with reverse direction."""
+    mock_config_entry.add_to_hass(hass)
+    await hass.config_entries.async_setup(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    # Discover a locomotive going in reverse
+    callback = mock_z21_station.subscribe_loco_state.call_args[0][0]
+    mock_loco_state = MagicMock()
+    mock_loco_state.address = 3
+    mock_loco_state.speed_percentage = 50.0
+    mock_loco_state.reverse = True
+    mock_loco_state.functions = [False] * 32
+
+    callback(mock_loco_state)
+    await hass.async_block_till_done()
+
+    entity_id = "fan.locomotive_3"
+
+    # Turn off
+    await hass.services.async_call(
+        FAN_DOMAIN,
+        SERVICE_TURN_OFF,
+        {ATTR_ENTITY_ID: entity_id},
+        blocking=True,
+    )
+
+    mock_loco.stop.assert_called_once_with(reverse=True)
 
 
 async def test_fan_state_update(
