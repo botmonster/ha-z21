@@ -179,8 +179,10 @@ class Z21ConnectionManager:
             try:
                 if self._runtime_data.station is not None:
                     await self._runtime_data.station.close()
-            except TimeoutError, ConnectionError, OSError:
-                _LOGGER.debug("Error closing old station", exc_info=True)
+            except TimeoutError:
+                _LOGGER.debug("Error timeout closing old station")
+            except ConnectionError:
+                _LOGGER.debug("Error connection closing old station")
 
             try:
                 self._runtime_data.station = await Z21Station.connect(
@@ -200,11 +202,24 @@ class Z21ConnectionManager:
 
                 await self.start()
                 break
-            except TimeoutError, ConnectionError, OSError:
+            except TimeoutError:
                 self._reconnect_attempts += 1
                 _LOGGER.debug(
-                    "Reconnection attempt %d failed",
+                    "Reconnection attempt %d failed - timeout waiting for response",
                     self._reconnect_attempts,
+                )
+            except ConnectionError:
+                self._reconnect_attempts += 1
+                _LOGGER.debug(
+                    "Reconnection attempt %d failed - connection error",
+                    self._reconnect_attempts,
+                )
+            except OSError as exc:
+                self._reconnect_attempts += 1
+                _LOGGER.debug(
+                    "Reconnection attempt %d failed - OS error (%s)",
+                    self._reconnect_attempts,
+                    exc,
                 )
             except asyncio.CancelledError:
                 _LOGGER.debug("Reconnection attempt got CancelledError")
