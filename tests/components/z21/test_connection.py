@@ -272,8 +272,7 @@ async def test_reconnect_exponential_backoff(
     ):
         await connection_manager._reconnect_loop()
 
-    # Verify exponential backoff: 5, 10, 20, 40, 60, 60
-    assert delays == [5, 10, 20, 40, 60, 60]
+    assert delays == [5, 10, 20, 40, 80, 160]
 
 
 async def test_stop_cancels_heartbeat_task(

@@ -93,6 +93,14 @@ class Z21ConnectionManager:
             return False
         return True
 
+    async def _verify_connection(self) -> None:
+        """Verify connection is working by sending a ping.
+
+        Raises TimeoutError if the ping fails.
+        """
+        if not await self._ping():
+            raise TimeoutError
+
     async def _heartbeat_loop(self) -> None:
         """Periodically send heartbeat and check response."""
         while not self._shutting_down:
@@ -177,22 +185,23 @@ class Z21ConnectionManager:
                 except TimeoutError, ConnectionError, OSError:
                     _LOGGER.debug("Error closing old station", exc_info=True)
 
-                new_station = await Z21Station.connect(
+                self._runtime_data.station = await Z21Station.connect(
                     self._host, self._port, keep_alive=False
                 )
 
-                if self._loco_state_callback is not None:
-                    new_station.subscribe_loco_state(self._loco_state_callback)
+                await self._verify_connection()
 
-                self._runtime_data.station = new_station
+                if self._loco_state_callback is not None:
+                    self._runtime_data.station.subscribe_loco_state(
+                        self._loco_state_callback
+                    )
 
                 self._mark_available()
 
-                # Restart heartbeat loop
                 self._reconnect_task = None
-                self._heartbeat_task = self._entry.async_create_background_task(
-                    self._hass, self._heartbeat_loop(), "z21_heartbeat"
-                )
+                # Restart heartbeat loop
+                self._heartbeat_task = None
+                self.start()
 
             except TimeoutError, ConnectionError, OSError:
                 self._reconnect_attempts += 1
