@@ -177,7 +177,9 @@ class Z21ConnectionManager:
                 except TimeoutError, ConnectionError, OSError:
                     _LOGGER.debug("Error closing old station", exc_info=True)
 
-                new_station = await Z21Station.connect(self._host, self._port)
+                new_station = await Z21Station.connect(
+                    self._host, self._port, keep_alive=False
+                )
 
                 if self._loco_state_callback is not None:
                     new_station.subscribe_loco_state(self._loco_state_callback)

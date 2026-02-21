@@ -37,7 +37,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: Z21ConfigEntry) -> bool:
     port = entry.data.get(CONF_PORT, DEFAULT_PORT)
 
     try:
-        station = await Z21Station.connect(host, port)
+        station = await Z21Station.connect(host, port, keep_alive=False)
     except TimeoutError as err:
         raise ConfigEntryNotReady(f"Timeout connecting to {host}:{port}") from err
     except Exception as err:
@@ -155,10 +155,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: Z21ConfigEntry) -> bool:
                         exc_info=True,
                     )
 
-            await asyncio.gather(
-                *(_fetch_loco_state(address) for address in known_addresses),
-                return_exceptions=True,
-            )
+            for address in known_addresses:
+                await _fetch_loco_state(address)
 
         entry.async_create_background_task(
             hass, _restore_states(), "z21_restore_states"
