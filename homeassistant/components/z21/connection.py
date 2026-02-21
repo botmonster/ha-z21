@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 import contextlib
 import logging
 
@@ -51,10 +51,15 @@ class Z21ConnectionManager:
         self._reconnect_attempts = 0
         self._unavailable_logged = False
         self._loco_state_callback: Callable | None = None
+        self._restore_states_callback: (
+            Callable[[Z21Station], Awaitable[None]] | None
+        ) = None
         self._shutting_down = False
 
-    def start(self) -> None:
+    async def start(self) -> None:
         """Start the heartbeat monitoring loop."""
+        if self._restore_states_callback is not None:
+            await self._restore_states_callback(self._runtime_data.station)
         if self._heartbeat_task is None:
             self._heartbeat_task = self._entry.async_create_background_task(
                 self._hass, self._heartbeat_loop(), "z21_heartbeat"
@@ -74,6 +79,12 @@ class Z21ConnectionManager:
             with contextlib.suppress(asyncio.CancelledError):
                 await self._reconnect_task
             self._reconnect_task = None
+
+    def set_restore_states_callback(
+        self, restore_states_callback: Callable[[Z21Station], Awaitable[None]]
+    ) -> None:
+        """Store the restore states callback for re-registration after reconnect."""
+        self._restore_states_callback = restore_states_callback
 
     def set_loco_state_callback(self, loco_state_callback: Callable) -> None:
         """Store the loco state callback for re-registration after reconnect."""
@@ -109,26 +120,24 @@ class Z21ConnectionManager:
                 if self._shutting_down:
                     break
 
-                success = await self._ping()
-
-                if success:
-                    self._missed_heartbeats = 0
-                    if not self._runtime_data.available:
-                        self._mark_available()
-                else:
-                    self._missed_heartbeats += 1
-                    _LOGGER.debug(
-                        "Heartbeat missed (%d/%d)",
-                        self._missed_heartbeats,
-                        MAX_MISSED_HEARTBEATS,
-                    )
-                    if (
-                        self._missed_heartbeats >= MAX_MISSED_HEARTBEATS
-                        and self._runtime_data.available
-                    ):
-                        self._mark_unavailable()
-                        self._start_reconnect()
-                        return
+                await self._verify_connection()
+                self._missed_heartbeats = 0
+                if not self._runtime_data.available:
+                    self._mark_available()
+            except TimeoutError:
+                self._missed_heartbeats += 1
+                _LOGGER.debug(
+                    "Heartbeat missed (%d/%d)",
+                    self._missed_heartbeats,
+                    MAX_MISSED_HEARTBEATS,
+                )
+                if (
+                    self._missed_heartbeats >= MAX_MISSED_HEARTBEATS
+                    and self._runtime_data.available
+                ):
+                    self._mark_unavailable()
+                    self._start_reconnect()
+                    return
 
             except asyncio.CancelledError:
                 break
@@ -178,10 +187,8 @@ class Z21ConnectionManager:
                 break
 
             try:
-                old_station = self._runtime_data.station
-
                 try:
-                    await old_station.close()
+                    await self._runtime_data.station.close()
                 except TimeoutError, ConnectionError, OSError:
                     _LOGGER.debug("Error closing old station", exc_info=True)
 
@@ -199,9 +206,9 @@ class Z21ConnectionManager:
                 self._mark_available()
 
                 self._reconnect_task = None
-                # Restart heartbeat loop
                 self._heartbeat_task = None
-                self.start()
+
+                await self.start()
 
             except TimeoutError, ConnectionError, OSError:
                 self._reconnect_attempts += 1
