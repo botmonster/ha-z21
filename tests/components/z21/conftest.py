@@ -46,6 +46,18 @@ def mock_z21_station() -> Generator[AsyncMock]:
             "homeassistant.components.z21.config_flow.Z21Station",
             new=mock_station_cls,
         ),
+        patch(
+            "homeassistant.components.z21.connection.Z21Station",
+            new=mock_station_cls,
+        ),
+        patch(
+            "homeassistant.components.z21.connection.asyncio.sleep",
+            new=AsyncMock(),
+        ),
+        patch(
+            "homeassistant.components.z21.connection.Z21ConnectionManager._heartbeat_loop",
+            new=AsyncMock(),
+        ),
     ):
         station = AsyncMock()
         mock_station_cls.connect = AsyncMock(return_value=station)

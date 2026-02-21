@@ -90,27 +90,17 @@ class Z21ConnectionManager:
         """Store the loco state callback for re-registration after reconnect."""
         self._loco_state_callback = loco_state_callback
 
-    async def _ping(self) -> bool:
-        """Send a serial number request as a heartbeat check.
-
-        Returns True if a response was received, False on timeout or error.
-        """
-        try:
-            await asyncio.wait_for(
-                self._runtime_data.station.get_serial_number(),
-                timeout=HEARTBEAT_TIMEOUT,
-            )
-        except TimeoutError, ConnectionError, OSError:
-            return False
-        return True
-
     async def _verify_connection(self) -> None:
         """Verify connection is working by sending a ping.
 
-        Raises TimeoutError if the ping fails.
+        Raises TimeoutError or ConnectionError if the ping fails.
         """
-        if not await self._ping():
-            raise TimeoutError
+        if self._runtime_data.station is None:
+            raise ConnectionError("No station instance to verify connection")
+        await asyncio.wait_for(
+            self._runtime_data.station.get_serial_number(),
+            timeout=HEARTBEAT_TIMEOUT,
+        )
 
     async def _heartbeat_loop(self) -> None:
         """Periodically send heartbeat and check response."""
@@ -136,7 +126,7 @@ class Z21ConnectionManager:
                     and self._runtime_data.available
                 ):
                     self._mark_unavailable()
-                    self._start_reconnect()
+                    self.start_connect()
                     return
 
             except asyncio.CancelledError:
@@ -166,7 +156,7 @@ class Z21ConnectionManager:
             SIGNAL_Z21_CONNECTED.format(entry_id=self._entry_id),
         )
 
-    def _start_reconnect(self) -> None:
+    def start_connect(self) -> None:
         """Start the reconnection loop."""
         if self._reconnect_task is None and not self._shutting_down:
             self._reconnect_task = self._entry.async_create_background_task(
@@ -187,11 +177,12 @@ class Z21ConnectionManager:
                 break
 
             try:
-                try:
+                if self._runtime_data.station is not None:
                     await self._runtime_data.station.close()
-                except TimeoutError, ConnectionError, OSError:
-                    _LOGGER.debug("Error closing old station", exc_info=True)
+            except TimeoutError, ConnectionError, OSError:
+                _LOGGER.debug("Error closing old station", exc_info=True)
 
+            try:
                 self._runtime_data.station = await Z21Station.connect(
                     self._host, self._port, keep_alive=False
                 )
@@ -202,14 +193,13 @@ class Z21ConnectionManager:
                     self._runtime_data.station.subscribe_loco_state(
                         self._loco_state_callback
                     )
-
                 self._mark_available()
 
                 self._reconnect_task = None
                 self._heartbeat_task = None
 
                 await self.start()
-
+                break
             except TimeoutError, ConnectionError, OSError:
                 self._reconnect_attempts += 1
                 _LOGGER.debug(
@@ -217,8 +207,7 @@ class Z21ConnectionManager:
                     self._reconnect_attempts,
                 )
             except asyncio.CancelledError:
+                _LOGGER.debug("Reconnection attempt got CancelledError")
                 break
-            else:
-                return
 
         self._reconnect_task = None

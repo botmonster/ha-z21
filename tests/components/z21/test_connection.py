@@ -52,44 +52,23 @@ def connection_manager(
     )
 
 
-async def test_ping_success(
+async def test_verify_connection_success(
     connection_manager: Z21ConnectionManager,
     runtime_data: Z21RuntimeData,
 ) -> None:
-    """Test that ping returns True when station responds."""
-    result = await connection_manager._ping()
-    assert result is True
+    """Test that _verify_connection completes without raising when station responds."""
+    await connection_manager._verify_connection()
     runtime_data.station.get_serial_number.assert_called_once()
 
 
-async def test_ping_timeout(
+async def test_verify_connection_timeout(
     connection_manager: Z21ConnectionManager,
     runtime_data: Z21RuntimeData,
 ) -> None:
-    """Test that ping returns False on timeout."""
+    """Test that _verify_connection raises TimeoutError when station does not respond."""
     runtime_data.station.get_serial_number = AsyncMock(side_effect=TimeoutError)
-    result = await connection_manager._ping()
-    assert result is False
-
-
-async def test_ping_connection_error(
-    connection_manager: Z21ConnectionManager,
-    runtime_data: Z21RuntimeData,
-) -> None:
-    """Test that ping returns False on connection error."""
-    runtime_data.station.get_serial_number = AsyncMock(side_effect=ConnectionError)
-    result = await connection_manager._ping()
-    assert result is False
-
-
-async def test_ping_os_error(
-    connection_manager: Z21ConnectionManager,
-    runtime_data: Z21RuntimeData,
-) -> None:
-    """Test that ping returns False on OS error."""
-    runtime_data.station.get_serial_number = AsyncMock(side_effect=OSError)
-    result = await connection_manager._ping()
-    assert result is False
+    with pytest.raises(TimeoutError):
+        await connection_manager._verify_connection()
 
 
 async def test_mark_unavailable_dispatches_signal(
@@ -164,7 +143,7 @@ async def test_heartbeat_marks_unavailable_after_missed_beats(
 
     with (
         patch("homeassistant.components.z21.connection.asyncio.sleep", mock_sleep),
-        patch.object(connection_manager, "_start_reconnect"),
+        patch.object(connection_manager, "start_connect"),
     ):
         await connection_manager._heartbeat_loop()
 
@@ -227,8 +206,15 @@ async def test_reconnect_success(
         lambda: signals_received.append("connected"),
     )
 
+    sleep_count = 0
+
     async def mock_sleep(delay: float) -> None:
-        pass
+        nonlocal sleep_count
+        sleep_count += 1
+        # The loop has no break after success, so stop it on the second sleep
+        # (first sleep = reconnect attempt, second sleep = next loop iteration)
+        if sleep_count >= 2:
+            connection_manager._shutting_down = True
 
     with (
         patch("homeassistant.components.z21.connection.asyncio.sleep", mock_sleep),
@@ -236,7 +222,7 @@ async def test_reconnect_success(
             "homeassistant.components.z21.connection.Z21Station.connect",
             return_value=new_station,
         ),
-        patch.object(connection_manager, "_heartbeat_loop"),
+        patch.object(connection_manager, "start", new_callable=AsyncMock),
     ):
         await connection_manager._reconnect_loop()
 
@@ -280,7 +266,7 @@ async def test_stop_cancels_heartbeat_task(
     connection_manager: Z21ConnectionManager,
 ) -> None:
     """Test that stop cancels the heartbeat task."""
-    connection_manager.start()
+    await connection_manager.start()
     assert connection_manager._heartbeat_task is not None
 
     await connection_manager.stop()
@@ -296,7 +282,7 @@ async def test_stop_cancels_reconnect_task(
     """Test that stop cancels the reconnect task."""
     # Simulate being in reconnect state
     runtime_data.available = False
-    connection_manager._start_reconnect()
+    connection_manager.start_connect()
     assert connection_manager._reconnect_task is not None
 
     await connection_manager.stop()
@@ -317,7 +303,7 @@ async def test_entity_availability_follows_runtime_data(
         return_value=mock_z21_station,
     ):
         await hass.config_entries.async_setup(mock_config_entry.entry_id)
-        await hass.async_block_till_done()
+        await hass.async_block_till_done(wait_background_tasks=True)
 
     # Discover a locomotive
     loco_callback = mock_z21_station.subscribe_loco_state.call_args[0][0]

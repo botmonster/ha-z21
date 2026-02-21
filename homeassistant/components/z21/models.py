@@ -33,7 +33,7 @@ class LocoDevice:
 class Z21RuntimeData:
     """Runtime data for Z21 integration."""
 
-    station: Z21Station
+    station: Z21Station | None = None
     serial_number: int | None = None
     firmware_version: tuple[int, int] | None = None
     locomotives: dict[int, LocoDevice] = field(default_factory=dict)

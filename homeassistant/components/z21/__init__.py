@@ -10,7 +10,6 @@ from z21aio import Loco, LocoState, Z21Station
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_HOST, Platform
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 
@@ -36,55 +35,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: Z21ConfigEntry) -> bool:
     host = entry.data[CONF_HOST]
     port = entry.data.get(CONF_PORT, DEFAULT_PORT)
 
-    try:
-        station = await Z21Station.connect(host, port, keep_alive=False)
-    except TimeoutError as err:
-        raise ConfigEntryNotReady(f"Timeout connecting to {host}:{port}") from err
-    except Exception as err:
-        raise ConfigEntryNotReady(f"Failed to connect to Z21 at {host}:{port}") from err
-
-    # Initialize runtime data with just the station instance
-    runtime_data = Z21RuntimeData(station=station)
+    runtime_data = Z21RuntimeData()
     entry.runtime_data = runtime_data
 
-    # Create connection manager for heartbeat monitoring and reconnection
     connection_manager = Z21ConnectionManager(hass, entry, host, port, runtime_data)
-
-    # Get device registry early for use in background task and restoration
     dev_reg = dr.async_get(hass)
-
-    async def _update_station_info() -> None:
-        """Fetch station info and register device."""
-        try:
-            # Fetch info
-            serial_number, firmware_version = await asyncio.gather(
-                station.get_serial_number(),
-                station.get_firmware_version(),
-            )
-
-            # Update runtime data
-            runtime_data.serial_number = serial_number
-            runtime_data.firmware_version = firmware_version
-
-            # Register the Z21 hub device
-            dev_reg.async_get_or_create(
-                config_entry_id=entry.entry_id,
-                identifiers={(DOMAIN, str(serial_number))},
-                name="Z21 Station",
-                manufacturer="Roco/Fleischmann",
-                model="Z21",
-                sw_version=f"{firmware_version[0]}.{firmware_version[1]}",
-            )
-        except (TimeoutError, ConnectionError, OSError) as err:
-            _LOGGER.warning(
-                "Failed to fetch station info: %s",
-                err,
-                exc_info=True,
-            )
-
-    entry.async_create_background_task(
-        hass, _update_station_info(), "z21_update_station_info"
-    )
 
     @callback
     def handle_loco_state(state: LocoState) -> None:
@@ -113,38 +68,55 @@ async def async_setup_entry(hass: HomeAssistant, entry: Z21ConfigEntry) -> bool:
             SIGNAL_LOCO_STATE_UPDATE.format(entry_id=entry.entry_id, address=address),
         )
 
-    station.subscribe_loco_state(handle_loco_state)
+    async def _update_station_info(station) -> None:
+        """Fetch station info and register device."""
+        try:
+            serial_number, firmware_version = await asyncio.gather(
+                station.get_serial_number(),
+                station.get_firmware_version(),
+            )
+            runtime_data.serial_number = serial_number
+            runtime_data.firmware_version = firmware_version
+
+            # Register the Z21 hub device
+            dev_reg.async_get_or_create(
+                config_entry_id=entry.entry_id,
+                identifiers={(DOMAIN, str(serial_number))},
+                name="Z21 Station",
+                manufacturer="Roco/Fleischmann",
+                model="Z21",
+                sw_version=f"{firmware_version[0]}.{firmware_version[1]}",
+            )
+            station.subscribe_loco_state(handle_loco_state)
+        except (TimeoutError, ConnectionError, OSError) as err:
+            _LOGGER.warning(
+                "Failed to fetch station info: %s",
+                err,
+                exc_info=True,
+            )
+
     connection_manager.set_loco_state_callback(handle_loco_state)
 
-    # Restore previously known locomotives from device registry
-    z21_devices = dr.async_entries_for_config_entry(dev_reg, entry.entry_id)
-    known_addresses: set[int] = set()
+    async def _restore_states(station: Z21Station) -> None:
 
-    for device in z21_devices:
-        # Skip the hub device
-        if device.model == "Z21":
-            continue
+        entry.async_on_unload(station.close)
+        await _update_station_info(station)
+        # Restore previously known locomotives from device registry
+        z21_devices = dr.async_entries_for_config_entry(dev_reg, entry.entry_id)
+        known_addresses: set[int] = set()
 
-        address: int | None = None
-        if device.serial_number and device.serial_number.isdigit():
-            address = int(device.serial_number)
-        else:
-            for identifier in device.identifiers:
-                if identifier[0] == entry.domain and "_" in identifier[1]:
-                    parts = identifier[1].split("_")
-                    if len(parts) >= 2 and parts[-1].isdigit():
-                        address = int(parts[-1])
-                        break
-
-        if address is not None:
-            known_addresses.add(address)
-
-    if known_addresses:
-        _LOGGER.debug("Restoring state for locomotives: %s", known_addresses)
-
-        async def _restore_states() -> None:
-            async def _fetch_loco_state(address: int) -> None:
-                """Fetch state for a single locomotive."""
+        for device in z21_devices:
+            # Skip the hub device
+            if device.model == "Z21":
+                continue
+            address: int | None = None
+            if device.serial_number and device.serial_number.isdigit():
+                address = int(device.serial_number)
+            if address is not None:
+                known_addresses.add(address)
+        if known_addresses:
+            _LOGGER.debug("Restoring state for locomotives: %s", known_addresses)
+            for address in known_addresses:
                 try:
                     await Loco.control(station, address)
                 except (TimeoutError, ConnectionError, OSError) as err:
@@ -155,20 +127,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: Z21ConfigEntry) -> bool:
                         exc_info=True,
                     )
 
-            for address in known_addresses:
-                await _fetch_loco_state(address)
-
-        entry.async_create_background_task(
-            hass, _restore_states(), "z21_restore_states"
-        )
-
+    connection_manager.set_restore_states_callback(_restore_states)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
-    # Start connection monitoring after platforms are set up
-    connection_manager.start()
-
-    # Stop connection manager before closing station (LIFO order)
-    entry.async_on_unload(station.close)
+    connection_manager.start_connect()
     entry.async_on_unload(connection_manager.stop)
 
     return True

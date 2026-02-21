@@ -1,6 +1,6 @@
 """Test the z21 fan platform."""
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 from homeassistant.components.fan import (
     ATTR_DIRECTION,
@@ -26,13 +26,8 @@ async def test_fan_discovery(
 ) -> None:
     """Test fan entity is created when locomotive is discovered."""
     mock_config_entry.add_to_hass(hass)
-
-    with patch(
-        "homeassistant.components.z21.Z21Station.connect",
-        return_value=mock_z21_station,
-    ):
-        await hass.config_entries.async_setup(mock_config_entry.entry_id)
-        await hass.async_block_till_done()
+    await hass.config_entries.async_setup(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
 
     # Get the callback and trigger loco discovery
     callback = mock_z21_station.subscribe_loco_state.call_args[0][0]
@@ -59,13 +54,8 @@ async def test_fan_speed_control(
 ) -> None:
     """Test setting fan speed controls locomotive."""
     mock_config_entry.add_to_hass(hass)
-
-    with patch(
-        "homeassistant.components.z21.Z21Station.connect",
-        return_value=mock_z21_station,
-    ):
-        await hass.config_entries.async_setup(mock_config_entry.entry_id)
-        await hass.async_block_till_done()
+    await hass.config_entries.async_setup(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
 
     # Discover a locomotive
     callback = mock_z21_station.subscribe_loco_state.call_args[0][0]
@@ -98,13 +88,8 @@ async def test_fan_direction_control(
 ) -> None:
     """Test setting fan direction controls locomotive."""
     mock_config_entry.add_to_hass(hass)
-
-    with patch(
-        "homeassistant.components.z21.Z21Station.connect",
-        return_value=mock_z21_station,
-    ):
-        await hass.config_entries.async_setup(mock_config_entry.entry_id)
-        await hass.async_block_till_done()
+    await hass.config_entries.async_setup(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
 
     # Discover a locomotive with speed
     callback = mock_z21_station.subscribe_loco_state.call_args[0][0]
@@ -137,13 +122,8 @@ async def test_fan_turn_off(
 ) -> None:
     """Test turning off fan stops locomotive."""
     mock_config_entry.add_to_hass(hass)
-
-    with patch(
-        "homeassistant.components.z21.Z21Station.connect",
-        return_value=mock_z21_station,
-    ):
-        await hass.config_entries.async_setup(mock_config_entry.entry_id)
-        await hass.async_block_till_done()
+    await hass.config_entries.async_setup(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
 
     # Discover a locomotive
     callback = mock_z21_station.subscribe_loco_state.call_args[0][0]
@@ -175,13 +155,8 @@ async def test_fan_state_update(
 ) -> None:
     """Test fan state updates when locomotive state changes."""
     mock_config_entry.add_to_hass(hass)
-
-    with patch(
-        "homeassistant.components.z21.Z21Station.connect",
-        return_value=mock_z21_station,
-    ):
-        await hass.config_entries.async_setup(mock_config_entry.entry_id)
-        await hass.async_block_till_done()
+    await hass.config_entries.async_setup(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
 
     callback = mock_z21_station.subscribe_loco_state.call_args[0][0]
 
@@ -227,13 +202,8 @@ async def test_fan_turn_on_with_percentage(
 ) -> None:
     """Test turning on fan with specific percentage."""
     mock_config_entry.add_to_hass(hass)
-
-    with patch(
-        "homeassistant.components.z21.Z21Station.connect",
-        return_value=mock_z21_station,
-    ):
-        await hass.config_entries.async_setup(mock_config_entry.entry_id)
-        await hass.async_block_till_done()
+    await hass.config_entries.async_setup(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
 
     # Discover a locomotive at rest
     callback = mock_z21_station.subscribe_loco_state.call_args[0][0]
@@ -266,13 +236,8 @@ async def test_fan_turn_on_without_percentage(
 ) -> None:
     """Test turning on fan without percentage uses default 50%."""
     mock_config_entry.add_to_hass(hass)
-
-    with patch(
-        "homeassistant.components.z21.Z21Station.connect",
-        return_value=mock_z21_station,
-    ):
-        await hass.config_entries.async_setup(mock_config_entry.entry_id)
-        await hass.async_block_till_done()
+    await hass.config_entries.async_setup(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
 
     # Discover a locomotive at rest moving forward
     callback = mock_z21_station.subscribe_loco_state.call_args[0][0]

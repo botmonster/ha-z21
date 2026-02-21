@@ -16,7 +16,7 @@ HEARTBEAT_INTERVAL = 60  # seconds between heartbeat pings
 HEARTBEAT_TIMEOUT = 5.0  # seconds to wait for heartbeat response
 MAX_MISSED_HEARTBEATS = 2  # consecutive misses before marking unavailable
 RECONNECT_BASE_DELAY = 5  # seconds for first reconnect attempt
-RECONNECT_MAX_DELAY = 60  # seconds cap for exponential backoff
+RECONNECT_MAX_DELAY = 600  # seconds cap for exponential backoff
 
 # Dispatcher signals
 SIGNAL_LOCO_DISCOVERED = f"{DOMAIN}_loco_discovered_{{entry_id}}"

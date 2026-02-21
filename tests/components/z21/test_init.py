@@ -18,13 +18,8 @@ async def test_setup_entry_success(
 ) -> None:
     """Test successful setup of config entry."""
     mock_config_entry.add_to_hass(hass)
-
-    with patch(
-        "homeassistant.components.z21.Z21Station.connect",
-        return_value=mock_z21_station,
-    ):
-        await hass.config_entries.async_setup(mock_config_entry.entry_id)
-        await hass.async_block_till_done()
+    await hass.config_entries.async_setup(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
 
     assert mock_config_entry.state is ConfigEntryState.LOADED
     assert mock_z21_station.get_serial_number.called
@@ -32,38 +27,36 @@ async def test_setup_entry_success(
     assert mock_z21_station.subscribe_loco_state.called
 
 
-async def test_setup_entry_timeout(
+async def test_setup_entry_connect_failure(
     hass: HomeAssistant,
     mock_config_entry: MockConfigEntry,
 ) -> None:
-    """Test setup failure due to timeout."""
+    """Test setup succeeds even when initial connection fails (deferred retry)."""
     mock_config_entry.add_to_hass(hass)
 
-    with patch(
-        "homeassistant.components.z21.Z21Station.connect",
-        side_effect=asyncio.TimeoutError,
+    with (
+        patch(
+            "homeassistant.components.z21.connection.Z21Station.connect",
+            side_effect=asyncio.TimeoutError,
+        ),
+        patch(
+            "homeassistant.components.z21.connection.asyncio.sleep",
+            new=AsyncMock(),
+        ),
+        patch(
+            "homeassistant.components.z21.connection.Z21ConnectionManager._heartbeat_loop",
+            new=AsyncMock(),
+        ),
+        patch(
+            "homeassistant.components.z21.connection.Z21ConnectionManager._reconnect_loop",
+            new=AsyncMock(),
+        ),
     ):
         await hass.config_entries.async_setup(mock_config_entry.entry_id)
         await hass.async_block_till_done()
 
-    assert mock_config_entry.state is ConfigEntryState.SETUP_RETRY
-
-
-async def test_setup_entry_connection_error(
-    hass: HomeAssistant,
-    mock_config_entry: MockConfigEntry,
-) -> None:
-    """Test setup failure due to connection error."""
-    mock_config_entry.add_to_hass(hass)
-
-    with patch(
-        "homeassistant.components.z21.Z21Station.connect",
-        side_effect=Exception("Connection refused"),
-    ):
-        await hass.config_entries.async_setup(mock_config_entry.entry_id)
-        await hass.async_block_till_done()
-
-    assert mock_config_entry.state is ConfigEntryState.SETUP_RETRY
+    # Connection is deferred — entry still loads successfully
+    assert mock_config_entry.state is ConfigEntryState.LOADED
 
 
 async def test_unload_entry(
@@ -73,13 +66,8 @@ async def test_unload_entry(
 ) -> None:
     """Test unloading a config entry."""
     mock_config_entry.add_to_hass(hass)
-
-    with patch(
-        "homeassistant.components.z21.Z21Station.connect",
-        return_value=mock_z21_station,
-    ):
-        await hass.config_entries.async_setup(mock_config_entry.entry_id)
-        await hass.async_block_till_done()
+    await hass.config_entries.async_setup(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
 
     assert mock_config_entry.state is ConfigEntryState.LOADED
 
@@ -97,13 +85,8 @@ async def test_loco_discovery(
 ) -> None:
     """Test locomotive discovery via state callback."""
     mock_config_entry.add_to_hass(hass)
-
-    with patch(
-        "homeassistant.components.z21.Z21Station.connect",
-        return_value=mock_z21_station,
-    ):
-        await hass.config_entries.async_setup(mock_config_entry.entry_id)
-        await hass.async_block_till_done()
+    await hass.config_entries.async_setup(mock_config_entry.entry_id)
+    await hass.async_block_till_done(wait_background_tasks=True)
 
     # Get the callback that was registered
     assert mock_z21_station.subscribe_loco_state.called
@@ -134,17 +117,13 @@ async def test_setup_entry_serial_timeout(
     """Test setup success (deferred) when getting serial number times out."""
     mock_config_entry.add_to_hass(hass)
 
-    mock_z21_station.get_serial_number.side_effect = asyncio.TimeoutError
+    # First call is _verify_connection (succeeds), second is _update_station_info (times out)
+    mock_z21_station.get_serial_number.side_effect = [12345678, asyncio.TimeoutError]
 
-    with patch(
-        "homeassistant.components.z21.Z21Station.connect",
-        return_value=mock_z21_station,
-    ):
-        await hass.config_entries.async_setup(mock_config_entry.entry_id)
-        await hass.async_block_till_done()
+    await hass.config_entries.async_setup(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
 
     assert mock_config_entry.state is ConfigEntryState.LOADED
-    assert not mock_z21_station.close.called
     assert mock_z21_station.get_serial_number.called
 
 
@@ -156,17 +135,16 @@ async def test_setup_entry_serial_error(
     """Test setup success (deferred) when getting serial number fails."""
     mock_config_entry.add_to_hass(hass)
 
-    mock_z21_station.get_serial_number.side_effect = OSError("Communication error")
+    # First call is _verify_connection (succeeds), second is _update_station_info (fails)
+    mock_z21_station.get_serial_number.side_effect = [
+        12345678,
+        OSError("Communication error"),
+    ]
 
-    with patch(
-        "homeassistant.components.z21.Z21Station.connect",
-        return_value=mock_z21_station,
-    ):
-        await hass.config_entries.async_setup(mock_config_entry.entry_id)
-        await hass.async_block_till_done()
+    await hass.config_entries.async_setup(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
 
     assert mock_config_entry.state is ConfigEntryState.LOADED
-    assert not mock_z21_station.close.called
     assert mock_z21_station.get_serial_number.called
 
 
@@ -179,18 +157,18 @@ async def test_restore_known_locos(
     """Test that known locomotives are restored from device registry on startup."""
     mock_config_entry.add_to_hass(hass)
 
-    # 1. Create a device with serial number (new format)
+    # 1. Create a device with serial number for address 3
     device_registry.async_get_or_create(
         config_entry_id=mock_config_entry.entry_id,
         identifiers={(DOMAIN, f"{mock_config_entry.entry_id}_3")},
         serial_number="3",
     )
 
-    # 2. Create a device with legacy identifier (old format, fallback)
+    # 2. Create a device with serial number for address 4
     device_registry.async_get_or_create(
         config_entry_id=mock_config_entry.entry_id,
         identifiers={(DOMAIN, f"{mock_config_entry.entry_id}_4")},
-        # No serial number
+        serial_number="4",
     )
 
     # 3. Create a device that should NOT be picked up (wrong domain)
@@ -201,21 +179,15 @@ async def test_restore_known_locos(
 
     mock_loco_instance = AsyncMock()
 
-    with (
-        patch(
-            "homeassistant.components.z21.Z21Station.connect",
-            return_value=mock_z21_station,
-        ),
-        patch("homeassistant.components.z21.Loco") as mock_loco_cls,
-    ):
+    with patch("homeassistant.components.z21.Loco") as mock_loco_cls:
         mock_loco_cls.control = AsyncMock(return_value=mock_loco_instance)
         await hass.config_entries.async_setup(mock_config_entry.entry_id)
-        await hass.async_block_till_done()
+        await hass.async_block_till_done(wait_background_tasks=True)
 
-        # Verify Loco.control was called for both addresses
-        assert mock_loco_cls.control.call_count == 2
+    # Verify Loco.control was called for both addresses
+    assert mock_loco_cls.control.call_count == 2
 
-        # Check calls regardless of order
-        calls = [call.args[1] for call in mock_loco_cls.control.call_args_list]
-        assert 3 in calls
-        assert 4 in calls
+    # Check calls regardless of order
+    calls = [call.args[1] for call in mock_loco_cls.control.call_args_list]
+    assert 3 in calls
+    assert 4 in calls
