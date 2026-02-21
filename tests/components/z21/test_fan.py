@@ -34,6 +34,7 @@ async def test_fan_discovery(
     mock_loco_state = MagicMock()
     mock_loco_state.address = 3
     mock_loco_state.speed_percentage = 0.0
+    mock_loco_state.reverse = False
     mock_loco_state.functions = [False] * 32
 
     callback(mock_loco_state)
@@ -62,6 +63,7 @@ async def test_fan_speed_control(
     mock_loco_state = MagicMock()
     mock_loco_state.address = 3
     mock_loco_state.speed_percentage = 0.0
+    mock_loco_state.reverse = False
     mock_loco_state.functions = [False] * 32
 
     callback(mock_loco_state)
@@ -77,7 +79,7 @@ async def test_fan_speed_control(
         blocking=True,
     )
 
-    mock_loco.drive.assert_called_with(75)
+    mock_loco.drive.assert_called_with(75, forward=True)
 
 
 async def test_fan_direction_control(
@@ -96,6 +98,7 @@ async def test_fan_direction_control(
     mock_loco_state = MagicMock()
     mock_loco_state.address = 3
     mock_loco_state.speed_percentage = 50.0
+    mock_loco_state.reverse = False
     mock_loco_state.functions = [False] * 32
 
     callback(mock_loco_state)
@@ -111,7 +114,7 @@ async def test_fan_direction_control(
         blocking=True,
     )
 
-    mock_loco.drive.assert_called_with(-50)
+    mock_loco.drive.assert_called_with(50, reverse=True)
 
 
 async def test_fan_turn_off(
@@ -130,6 +133,7 @@ async def test_fan_turn_off(
     mock_loco_state = MagicMock()
     mock_loco_state.address = 3
     mock_loco_state.speed_percentage = 50.0
+    mock_loco_state.reverse = False
     mock_loco_state.functions = [False] * 32
 
     callback(mock_loco_state)
@@ -164,6 +168,7 @@ async def test_fan_state_update(
     mock_loco_state = MagicMock()
     mock_loco_state.address = 3
     mock_loco_state.speed_percentage = 0.0
+    mock_loco_state.reverse = False
     mock_loco_state.functions = [False] * 32
 
     callback(mock_loco_state)
@@ -175,6 +180,7 @@ async def test_fan_state_update(
 
     # Update to moving forward
     mock_loco_state.speed_percentage = 75.0
+    mock_loco_state.reverse = False
     callback(mock_loco_state)
     await hass.async_block_till_done()
 
@@ -184,7 +190,8 @@ async def test_fan_state_update(
     assert state.attributes.get(ATTR_DIRECTION) == DIRECTION_FORWARD
 
     # Update to moving reverse
-    mock_loco_state.speed_percentage = -50.0
+    mock_loco_state.speed_percentage = 50.0
+    mock_loco_state.reverse = True
     callback(mock_loco_state)
     await hass.async_block_till_done()
 
@@ -210,6 +217,7 @@ async def test_fan_turn_on_with_percentage(
     mock_loco_state = MagicMock()
     mock_loco_state.address = 3
     mock_loco_state.speed_percentage = 0.0
+    mock_loco_state.reverse = False
     mock_loco_state.functions = [False] * 32
 
     callback(mock_loco_state)
@@ -244,6 +252,7 @@ async def test_fan_turn_on_without_percentage(
     mock_loco_state = MagicMock()
     mock_loco_state.address = 3
     mock_loco_state.speed_percentage = 0.0
+    mock_loco_state.reverse = False
     mock_loco_state.functions = [False] * 32
 
     callback(mock_loco_state)
@@ -259,5 +268,38 @@ async def test_fan_turn_on_without_percentage(
         blocking=True,
     )
 
-    # Should use 50% in forward direction (positive)
     mock_loco.drive.assert_called_with(50)
+
+
+async def test_fan_direction_preserved_at_zero_speed(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_z21_station: AsyncMock,
+) -> None:
+    """Test that direction is preserved when locomotive stops."""
+    mock_config_entry.add_to_hass(hass)
+    await hass.config_entries.async_setup(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    callback = mock_z21_station.subscribe_loco_state.call_args[0][0]
+    mock_loco_state = MagicMock()
+    mock_loco_state.address = 3
+    mock_loco_state.functions = [False] * 32
+
+    # Discover loco moving in reverse
+    mock_loco_state.speed_percentage = 50.0
+    mock_loco_state.reverse = True
+    callback(mock_loco_state)
+    await hass.async_block_till_done()
+
+    entity_id = "fan.locomotive_3"
+
+    # Stop the loco (speed goes to 0, no direction update) — direction must remain reverse
+    mock_loco_state.speed_percentage = 0.0
+    mock_loco_state.reverse = None
+    callback(mock_loco_state)
+    await hass.async_block_till_done()
+
+    state = hass.states.get(entity_id)
+    assert state.state == STATE_OFF
+    assert state.attributes.get(ATTR_DIRECTION) == DIRECTION_REVERSE

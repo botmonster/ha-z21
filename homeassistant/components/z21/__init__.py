@@ -58,6 +58,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: Z21ConfigEntry) -> bool:
         loco_device = runtime_data.locomotives[address]
         if state.speed_percentage is not None:
             loco_device.speed_percentage = state.speed_percentage
+        if state.reverse is not None:
+            loco_device.reverse = state.reverse
         if state.functions is not None:
             loco_device.functions = list(state.functions) + [False] * (
                 32 - len(state.functions)

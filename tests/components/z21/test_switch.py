@@ -37,6 +37,7 @@ async def test_switch_discovery(
     mock_loco_state = MagicMock()
     mock_loco_state.address = 3
     mock_loco_state.speed_percentage = 0.0
+    mock_loco_state.reverse = False
     mock_loco_state.functions = [False] * 32
 
     callback(mock_loco_state)
@@ -70,6 +71,7 @@ async def test_switch_turn_on(
     mock_loco_state = MagicMock()
     mock_loco_state.address = 3
     mock_loco_state.speed_percentage = 0.0
+    mock_loco_state.reverse = False
     mock_loco_state.functions = [False] * 32
 
     callback(mock_loco_state)
@@ -109,6 +111,7 @@ async def test_switch_turn_off(
     mock_loco_state = MagicMock()
     mock_loco_state.address = 3
     mock_loco_state.speed_percentage = 0.0
+    mock_loco_state.reverse = False
     mock_loco_state.functions = [True] + [False] * 31
 
     callback(mock_loco_state)
@@ -148,6 +151,7 @@ async def test_switch_state_update(
     mock_loco_state = MagicMock()
     mock_loco_state.address = 3
     mock_loco_state.speed_percentage = 0.0
+    mock_loco_state.reverse = False
     mock_loco_state.functions = [False] * 32
 
     callback(mock_loco_state)
@@ -195,6 +199,7 @@ async def test_device_info_serial_number(
     mock_loco_state = MagicMock()
     mock_loco_state.address = 123
     mock_loco_state.speed_percentage = 0.0
+    mock_loco_state.reverse = False
     mock_loco_state.functions = [False] * 32
 
     callback(mock_loco_state)

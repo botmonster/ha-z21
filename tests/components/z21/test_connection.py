@@ -310,6 +310,7 @@ async def test_entity_availability_follows_runtime_data(
     mock_loco_state = MagicMock()
     mock_loco_state.address = 3
     mock_loco_state.speed_percentage = 50.0
+    mock_loco_state.reverse = False
     mock_loco_state.functions = [False] * 32
 
     loco_callback(mock_loco_state)

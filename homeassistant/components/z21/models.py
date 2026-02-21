@@ -16,12 +16,13 @@ class LocoDevice:
     address: int
     loco: Loco | None = None
     speed_percentage: float = 0.0
+    reverse: bool = False
     functions: list[bool] = field(default_factory=lambda: [False] * 32)
 
     @property
     def is_forward(self) -> bool:
-        """Return True if locomotive is moving forward."""
-        return self.speed_percentage >= 0
+        """Return True if locomotive direction is forward."""
+        return not self.reverse
 
     @property
     def abs_speed(self) -> int:

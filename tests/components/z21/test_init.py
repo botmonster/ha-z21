@@ -96,6 +96,7 @@ async def test_loco_discovery(
     mock_loco_state = MagicMock()
     mock_loco_state.address = 3
     mock_loco_state.speed_percentage = 50.0
+    mock_loco_state.reverse = False
     mock_loco_state.functions = [True] + [False] * 31
 
     # Trigger the callback

@@ -114,19 +114,18 @@ class LocomotiveFan(Z21LocoEntity, FanEntity):
     async def async_set_percentage(self, percentage: int) -> None:
         """Set the speed percentage."""
         loco = await self._ensure_loco_control()
-        # Maintain current direction when setting speed
-        if not self._loco_device.is_forward:
-            percentage = -percentage
-        await loco.drive(percentage)
+        await loco.drive(percentage, forward=self._loco_device.is_forward)
 
     async def async_set_direction(self, direction: str) -> None:
         """Set the direction of the locomotive."""
         loco = await self._ensure_loco_control()
         current_speed = self._loco_device.abs_speed
         if direction == DIRECTION_FORWARD:
+            self._loco_device.reverse = False
             await loco.drive(current_speed)
         else:
-            await loco.drive(-current_speed)
+            self._loco_device.reverse = True
+            await loco.drive(current_speed, reverse=True)
 
     async def async_turn_on(
         self,
@@ -135,13 +134,12 @@ class LocomotiveFan(Z21LocoEntity, FanEntity):
         **kwargs: Any,
     ) -> None:
         """Turn on the locomotive."""
+        percentage = percentage if percentage is not None else 50
         loco = await self._ensure_loco_control()
-        if percentage is not None:
-            await self.async_set_percentage(percentage)
+        if self._loco_device.reverse:
+            await loco.drive(percentage, reverse=True)
         else:
-            # Default to 50% in current direction if no speed specified
-            direction = 1 if self._loco_device.is_forward else -1
-            await loco.drive(50 * direction)
+            await loco.drive(percentage)
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Stop the locomotive."""
