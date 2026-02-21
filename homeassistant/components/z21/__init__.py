@@ -45,6 +45,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: Z21ConfigEntry) -> bool:
     def handle_loco_state(state: LocoState) -> None:
         """Handle locomotive state updates from Z21."""
         address = state.address
+        _LOGGER.debug("Updating state for locomotive at address %d: %s", address, state)
 
         if address not in runtime_data.locomotives:
             _LOGGER.debug("Discovered new locomotive at address %d", address)
@@ -70,7 +71,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: Z21ConfigEntry) -> bool:
             SIGNAL_LOCO_STATE_UPDATE.format(entry_id=entry.entry_id, address=address),
         )
 
-    async def _update_station_info(station) -> None:
+    async def _update_station_info(station: Z21Station) -> None:
         """Fetch station info and register device."""
         try:
             serial_number, firmware_version = await asyncio.gather(
@@ -89,12 +90,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: Z21ConfigEntry) -> bool:
                 model="Z21",
                 sw_version=f"{firmware_version[0]}.{firmware_version[1]}",
             )
-            station.subscribe_loco_state(handle_loco_state)
         except (TimeoutError, ConnectionError, OSError) as err:
             _LOGGER.warning(
                 "Failed to fetch station info: %s",
                 err,
-                exc_info=True,
             )
 
     connection_manager.set_loco_state_callback(handle_loco_state)
