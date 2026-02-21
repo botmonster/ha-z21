@@ -33,8 +33,13 @@ async def async_setup_entry(
         loco_device = runtime_data.locomotives[address]
         async_add_entities(
             [
-                LocoFunctionSwitch(runtime_data, entry.entry_id, loco_device, fn_index)
-                for fn_index in range(FUNCTION_COUNT)
+                LocoEStopSwitch(runtime_data, entry.entry_id, loco_device),
+                *(
+                    LocoFunctionSwitch(
+                        runtime_data, entry.entry_id, loco_device, fn_index
+                    )
+                    for fn_index in range(FUNCTION_COUNT)
+                ),
             ]
         )
 
@@ -48,13 +53,12 @@ async def async_setup_entry(
     )
 
     # Add entities for already discovered locomotives
-    entities: list[LocoFunctionSwitch] = []
+    entities: list[LocoFunctionSwitch | LocoEStopSwitch] = []
     for loco_device in runtime_data.locomotives.values():
+        entities.append(LocoEStopSwitch(runtime_data, entry.entry_id, loco_device))
         entities.extend(
-            [
-                LocoFunctionSwitch(runtime_data, entry.entry_id, loco_device, fn_index)
-                for fn_index in range(FUNCTION_COUNT)
-            ]
+            LocoFunctionSwitch(runtime_data, entry.entry_id, loco_device, fn_index)
+            for fn_index in range(FUNCTION_COUNT)
         )
     async_add_entities(entities)
 
@@ -117,3 +121,51 @@ class LocoFunctionSwitch(Z21LocoEntity, SwitchEntity):
         """Turn the function off."""
         loco = await self._ensure_loco_control()
         await loco.function_off(self._function_index)
+
+
+class LocoEStopSwitch(Z21LocoEntity, SwitchEntity):
+    """Switch entity that triggers an emergency stop for a locomotive."""
+
+    _attr_has_entity_name = True
+    _attr_translation_key = "estop"
+    _attr_icon = "mdi:alert-octagon"
+
+    def __init__(
+        self,
+        runtime_data: Z21RuntimeData,
+        entry_id: str,
+        loco_device: LocoDevice,
+    ) -> None:
+        """Initialize the emergency stop switch."""
+        super().__init__(runtime_data, entry_id, loco_device)
+        self._attr_unique_id = f"{entry_id}_{self._address}_estop"
+        self.entity_id = f"switch.locomotive_{self._address}_estop"
+        self._loco: Loco | None = None
+
+    @callback
+    def _handle_disconnected(self) -> None:
+        """Clear cached loco control on disconnect."""
+        self._loco = None
+        super()._handle_disconnected()
+
+    async def _ensure_loco_control(self) -> Loco:
+        """Ensure we have control of the locomotive."""
+        if self._loco is None:
+            self._loco = await Loco.control(
+                self._runtime_data.station,
+                self._address,
+            )
+        return self._loco
+
+    @property
+    def is_on(self) -> bool:
+        """Return False; estop state is not tracked by the Z21 station."""
+        return False
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        """Send emergency stop command."""
+        loco = await self._ensure_loco_control()
+        await loco.estop()
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        """No-op; estop cannot be cancelled via a DCC command."""

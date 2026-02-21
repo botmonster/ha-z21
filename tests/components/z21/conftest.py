@@ -89,6 +89,7 @@ def mock_loco() -> Generator[AsyncMock]:
         loco.drive = AsyncMock()
         loco.stop = AsyncMock()
         loco.halt = AsyncMock()
+        loco.estop = AsyncMock()
         loco.function_on = AsyncMock()
         loco.function_off = AsyncMock()
 

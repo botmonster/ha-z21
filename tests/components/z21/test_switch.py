@@ -178,6 +178,109 @@ async def test_switch_state_update(
     assert state.state == STATE_OFF
 
 
+async def test_estop_switch_discovery(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_z21_station: AsyncMock,
+) -> None:
+    """Test estop switch entity is created when locomotive is discovered."""
+    mock_config_entry.add_to_hass(hass)
+
+    with patch(
+        "homeassistant.components.z21.Z21Station.connect",
+        return_value=mock_z21_station,
+    ):
+        await hass.config_entries.async_setup(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+
+    callback = mock_z21_station.subscribe_loco_state.call_args[0][0]
+    mock_loco_state = MagicMock()
+    mock_loco_state.address = 3
+    mock_loco_state.speed_percentage = 0.0
+    mock_loco_state.reverse = False
+    mock_loco_state.functions = [False] * 32
+
+    callback(mock_loco_state)
+    await hass.async_block_till_done()
+
+    entity_id = "switch.locomotive_3_estop"
+    state = hass.states.get(entity_id)
+    assert state is not None
+    assert state.state == STATE_OFF
+
+
+async def test_estop_switch_turn_on(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_z21_station: AsyncMock,
+    mock_loco: AsyncMock,
+) -> None:
+    """Test turning on the estop switch sends emergency stop command."""
+    mock_config_entry.add_to_hass(hass)
+
+    with patch(
+        "homeassistant.components.z21.Z21Station.connect",
+        return_value=mock_z21_station,
+    ):
+        await hass.config_entries.async_setup(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+
+    callback = mock_z21_station.subscribe_loco_state.call_args[0][0]
+    mock_loco_state = MagicMock()
+    mock_loco_state.address = 3
+    mock_loco_state.speed_percentage = 0.0
+    mock_loco_state.reverse = False
+    mock_loco_state.functions = [False] * 32
+
+    callback(mock_loco_state)
+    await hass.async_block_till_done()
+
+    await hass.services.async_call(
+        SWITCH_DOMAIN,
+        SERVICE_TURN_ON,
+        {ATTR_ENTITY_ID: "switch.locomotive_3_estop"},
+        blocking=True,
+    )
+
+    mock_loco.estop.assert_called_once()
+
+
+async def test_estop_switch_turn_off(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_z21_station: AsyncMock,
+    mock_loco: AsyncMock,
+) -> None:
+    """Test turning off the estop switch is a no-op."""
+    mock_config_entry.add_to_hass(hass)
+
+    with patch(
+        "homeassistant.components.z21.Z21Station.connect",
+        return_value=mock_z21_station,
+    ):
+        await hass.config_entries.async_setup(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+
+    callback = mock_z21_station.subscribe_loco_state.call_args[0][0]
+    mock_loco_state = MagicMock()
+    mock_loco_state.address = 3
+    mock_loco_state.speed_percentage = 0.0
+    mock_loco_state.reverse = False
+    mock_loco_state.functions = [False] * 32
+
+    callback(mock_loco_state)
+    await hass.async_block_till_done()
+
+    await hass.services.async_call(
+        SWITCH_DOMAIN,
+        SERVICE_TURN_OFF,
+        {ATTR_ENTITY_ID: "switch.locomotive_3_estop"},
+        blocking=True,
+    )
+
+    mock_loco.estop.assert_not_called()
+
+
 async def test_device_info_serial_number(
     hass: HomeAssistant,
     mock_config_entry: MockConfigEntry,
