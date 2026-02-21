@@ -79,7 +79,7 @@ async def test_fan_speed_control(
         blocking=True,
     )
 
-    mock_loco.drive.assert_called_with(75, forward=True)
+    mock_loco.drive.assert_called_with(75, reverse=False)
 
 
 async def test_fan_direction_control(

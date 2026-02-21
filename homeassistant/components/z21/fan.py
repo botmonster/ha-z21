@@ -109,12 +109,12 @@ class LocomotiveFan(Z21LocoEntity, FanEntity):
     @property
     def current_direction(self) -> str:
         """Return the current direction."""
-        return DIRECTION_FORWARD if self._loco_device.is_forward else DIRECTION_REVERSE
+        return DIRECTION_FORWARD if not self._loco_device.reverse else DIRECTION_REVERSE
 
     async def async_set_percentage(self, percentage: int) -> None:
         """Set the speed percentage."""
         loco = await self._ensure_loco_control()
-        await loco.drive(percentage, forward=self._loco_device.is_forward)
+        await loco.drive(percentage, reverse=self._loco_device.reverse)
 
     async def async_set_direction(self, direction: str) -> None:
         """Set the direction of the locomotive."""
