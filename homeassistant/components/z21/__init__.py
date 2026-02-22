@@ -5,12 +5,12 @@ from __future__ import annotations
 import asyncio
 import logging
 
-from z21aio import Loco, LocoState, TurnoutState, Z21Station
+from z21aio import Loco, LocoState, Turnout, TurnoutState, Z21Station
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_HOST, Platform
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import device_registry as dr, entity_registry as er
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 
 from .connection import Z21ConnectionManager
@@ -42,6 +42,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: Z21ConfigEntry) -> bool:
 
     connection_manager = Z21ConnectionManager(hass, entry, host, port, runtime_data)
     dev_reg = dr.async_get(hass)
+    entity_reg = er.async_get(hass)
 
     @callback
     def handle_loco_state(state: LocoState) -> None:
@@ -131,30 +132,32 @@ async def async_setup_entry(hass: HomeAssistant, entry: Z21ConfigEntry) -> bool:
 
         entry.async_on_unload(station.close)
         await _update_station_info(station)
-        # Restore previously known locomotives from device registry
-        z21_devices = dr.async_entries_for_config_entry(dev_reg, entry.entry_id)
-        known_addresses: set[int] = set()
 
+        z21_devices = dr.async_entries_for_config_entry(dev_reg, entry.entry_id)
+        z21_entities = er.async_entries_for_config_entry(entity_reg, entry.entry_id)
+        for entity in z21_entities:
+            if entity.domain == "switch" and "_turnout_" in (entity.unique_id or ""):
+                try:
+                    address = int(entity.unique_id.split("_")[-1])
+                    await Turnout.control(station, address)
+                except (TimeoutError, ConnectionError, OSError, ValueError) as err:
+                    _LOGGER.warning(
+                        "Failed to restore state for turnout %s: %s",
+                        entity.unique_id,
+                        err,
+                    )
         for device in z21_devices:
-            # Skip the hub device
             if device.model == "Z21":
                 continue
-            address: int | None = None
             if device.serial_number and device.serial_number.isdigit():
-                address = int(device.serial_number)
-            if address is not None:
-                known_addresses.add(address)
-        if known_addresses:
-            _LOGGER.debug("Restoring state for locomotives: %s", known_addresses)
-            for address in known_addresses:
                 try:
+                    address = int(device.serial_number)
                     await Loco.control(station, address)
-                except (TimeoutError, ConnectionError, OSError) as err:
+                except (TimeoutError, ConnectionError, OSError, ValueError) as err:
                     _LOGGER.warning(
                         "Failed to restore state for locomotive %s: %s",
-                        address,
+                        device.serial_number,
                         err,
-                        exc_info=True,
                     )
 
     connection_manager.set_restore_states_callback(_restore_states)

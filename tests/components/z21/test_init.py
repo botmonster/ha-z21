@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from homeassistant.components.z21.const import DOMAIN
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import device_registry as dr, entity_registry as er
 
 from tests.common import MockConfigEntry
 
@@ -147,6 +147,50 @@ async def test_setup_entry_serial_error(
 
     assert mock_config_entry.state is ConfigEntryState.LOADED
     assert mock_z21_station.get_serial_number.called
+
+
+async def test_restore_known_turnouts(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_z21_station: AsyncMock,
+    device_registry: dr.DeviceRegistry,
+    entity_registry: er.EntityRegistry,
+) -> None:
+    """Test that known turnouts are restored from entity registry on startup."""
+    mock_config_entry.add_to_hass(hass)
+
+    # Create hub device (model="Z21") — triggers turnout restore scanning
+    hub_device = device_registry.async_get_or_create(
+        config_entry_id=mock_config_entry.entry_id,
+        identifiers={(DOMAIN, "12345678")},
+        model="Z21",
+    )
+
+    # Register switch entities with turnout unique_id pattern
+    entity_registry.async_get_or_create(
+        "switch",
+        DOMAIN,
+        f"{mock_config_entry.entry_id}_turnout_5",
+        config_entry=mock_config_entry,
+        device_id=hub_device.id,
+    )
+    entity_registry.async_get_or_create(
+        "switch",
+        DOMAIN,
+        f"{mock_config_entry.entry_id}_turnout_7",
+        config_entry=mock_config_entry,
+        device_id=hub_device.id,
+    )
+
+    with patch("homeassistant.components.z21.Turnout") as mock_turnout_cls:
+        mock_turnout_cls.control = AsyncMock()
+        await hass.config_entries.async_setup(mock_config_entry.entry_id)
+        await hass.async_block_till_done(wait_background_tasks=True)
+
+    assert mock_turnout_cls.control.call_count == 2
+    calls = [call.args[1] for call in mock_turnout_cls.control.call_args_list]
+    assert 5 in calls
+    assert 7 in calls
 
 
 async def test_restore_known_locos(
