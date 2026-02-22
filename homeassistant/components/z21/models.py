@@ -16,6 +16,7 @@ class LocoDevice:
     address: int
     loco: Loco | None = None
     speed_percentage: float = 0.0
+    last_speed_percentage: float = 0.0
     reverse: bool = False
     functions: list[bool] = field(default_factory=lambda: [False] * 32)
 

@@ -120,12 +120,8 @@ class LocomotiveFan(Z21LocoEntity, FanEntity):
         """Set the direction of the locomotive."""
         loco = await self._ensure_loco_control()
         current_speed = self._loco_device.abs_speed
-        if direction == DIRECTION_FORWARD:
-            self._loco_device.reverse = False
-            await loco.drive(current_speed)
-        else:
-            self._loco_device.reverse = True
-            await loco.drive(current_speed, reverse=True)
+        self._loco_device.reverse = direction == DIRECTION_REVERSE
+        await loco.drive(current_speed, reverse=self._loco_device.reverse)
 
     async def async_turn_on(
         self,
@@ -134,12 +130,16 @@ class LocomotiveFan(Z21LocoEntity, FanEntity):
         **kwargs: Any,
     ) -> None:
         """Turn on the locomotive."""
-        percentage = percentage if percentage is not None else 50
+        current_percentage = (
+            self._loco_device.last_speed_percentage
+            if self._loco_device.last_speed_percentage > 0
+            else 40.0
+        )
+        speed_percentage = (
+            float(percentage) if percentage is not None else current_percentage
+        )
         loco = await self._ensure_loco_control()
-        if self._loco_device.reverse:
-            await loco.drive(percentage, reverse=True)
-        else:
-            await loco.drive(percentage)
+        await loco.drive(speed_percentage, reverse=self._loco_device.reverse)
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Stop the locomotive."""

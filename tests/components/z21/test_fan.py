@@ -268,7 +268,7 @@ async def test_fan_turn_on_with_percentage(
         blocking=True,
     )
 
-    mock_loco.drive.assert_called_with(80)
+    mock_loco.drive.assert_called_with(80, reverse=False)
 
 
 async def test_fan_turn_on_without_percentage(
@@ -303,7 +303,93 @@ async def test_fan_turn_on_without_percentage(
         blocking=True,
     )
 
-    mock_loco.drive.assert_called_with(50)
+    mock_loco.drive.assert_called_with(40, reverse=False)
+
+
+async def test_fan_turn_on_resumes_last_speed(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_z21_station: AsyncMock,
+    mock_loco: AsyncMock,
+) -> None:
+    """Test turning on fan without percentage resumes last non-zero speed."""
+    mock_config_entry.add_to_hass(hass)
+    await hass.config_entries.async_setup(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    callback = mock_z21_station.subscribe_loco_state.call_args[0][0]
+    mock_loco_state = MagicMock()
+    mock_loco_state.address = 3
+    mock_loco_state.functions = [False] * 32
+
+    # Locomotive runs at 75% forward — sets last_speed_percentage to 75
+    mock_loco_state.speed_percentage = 75.0
+    mock_loco_state.reverse = False
+    callback(mock_loco_state)
+    await hass.async_block_till_done()
+
+    # Locomotive stops — last_speed_percentage stays at 75
+    mock_loco_state.speed_percentage = 0.0
+    mock_loco_state.reverse = None
+    callback(mock_loco_state)
+    await hass.async_block_till_done()
+
+    entity_id = "fan.locomotive_3"
+    state = hass.states.get(entity_id)
+    assert state.state == STATE_OFF
+
+    # Turn on without percentage — should resume at 75%
+    await hass.services.async_call(
+        FAN_DOMAIN,
+        SERVICE_TURN_ON,
+        {ATTR_ENTITY_ID: entity_id},
+        blocking=True,
+    )
+
+    mock_loco.drive.assert_called_with(75, reverse=False)
+
+
+async def test_fan_turn_on_resumes_last_speed_in_reverse(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_z21_station: AsyncMock,
+    mock_loco: AsyncMock,
+) -> None:
+    """Test turning on fan without percentage resumes last speed and direction in reverse."""
+    mock_config_entry.add_to_hass(hass)
+    await hass.config_entries.async_setup(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    callback = mock_z21_station.subscribe_loco_state.call_args[0][0]
+    mock_loco_state = MagicMock()
+    mock_loco_state.address = 3
+    mock_loco_state.functions = [False] * 32
+
+    # Locomotive runs at 60% in reverse — sets last_speed_percentage to 60
+    mock_loco_state.speed_percentage = 60.0
+    mock_loco_state.reverse = True
+    callback(mock_loco_state)
+    await hass.async_block_till_done()
+
+    # Locomotive stops — last_speed_percentage stays at 60, direction stays reverse
+    mock_loco_state.speed_percentage = 0.0
+    mock_loco_state.reverse = None
+    callback(mock_loco_state)
+    await hass.async_block_till_done()
+
+    entity_id = "fan.locomotive_3"
+    state = hass.states.get(entity_id)
+    assert state.state == STATE_OFF
+
+    # Turn on without percentage — should resume at 60% in reverse
+    await hass.services.async_call(
+        FAN_DOMAIN,
+        SERVICE_TURN_ON,
+        {ATTR_ENTITY_ID: entity_id},
+        blocking=True,
+    )
+
+    mock_loco.drive.assert_called_with(60, reverse=True)
 
 
 async def test_fan_direction_preserved_at_zero_speed(
