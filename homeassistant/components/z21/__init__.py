@@ -133,26 +133,22 @@ async def async_setup_entry(hass: HomeAssistant, entry: Z21ConfigEntry) -> bool:
         entry.async_on_unload(station.close)
         await _update_station_info(station)
 
-        z21_devices = dr.async_entries_for_config_entry(dev_reg, entry.entry_id)
-        z21_entities = er.async_entries_for_config_entry(entity_reg, entry.entry_id)
-        for entity in z21_entities:
+        for entity in er.async_entries_for_config_entry(entity_reg, entry.entry_id):
             if entity.domain == "switch" and "_turnout_" in (entity.unique_id or ""):
                 try:
-                    address = int(entity.unique_id.split("_")[-1])
-                    await Turnout.control(station, address)
+                    await Turnout.control(station, int(entity.unique_id.split("_")[-1]))
                 except (TimeoutError, ConnectionError, OSError, ValueError) as err:
                     _LOGGER.warning(
                         "Failed to restore state for turnout %s: %s",
                         entity.unique_id,
                         err,
                     )
-        for device in z21_devices:
+        for device in dr.async_entries_for_config_entry(dev_reg, entry.entry_id):
             if device.model == "Z21":
                 continue
             if device.serial_number and device.serial_number.isdigit():
                 try:
-                    address = int(device.serial_number)
-                    await Loco.control(station, address)
+                    await Loco.control(station, int(device.serial_number))
                 except (TimeoutError, ConnectionError, OSError, ValueError) as err:
                     _LOGGER.warning(
                         "Failed to restore state for locomotive %s: %s",
