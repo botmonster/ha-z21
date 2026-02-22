@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 
-from z21aio import Loco, LocoState, Z21Station
+from z21aio import Loco, LocoState, TurnoutState, Z21Station
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_HOST, Platform
@@ -20,8 +20,10 @@ from .const import (
     DOMAIN,
     SIGNAL_LOCO_DISCOVERED,
     SIGNAL_LOCO_STATE_UPDATE,
+    SIGNAL_TURNOUT_DISCOVERED,
+    SIGNAL_TURNOUT_STATE_UPDATE,
 )
-from .models import LocoDevice, Z21RuntimeData
+from .models import LocoDevice, TurnoutDevice, Z21RuntimeData
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -98,7 +100,32 @@ async def async_setup_entry(hass: HomeAssistant, entry: Z21ConfigEntry) -> bool:
                 err,
             )
 
+    @callback
+    def handle_turnout_state(state: TurnoutState) -> None:
+        """Handle turnout state updates from Z21."""
+        address = state.address
+        _LOGGER.debug("Updating state for turnout at address %d: %s", address, state)
+
+        if address not in runtime_data.turnouts:
+            _LOGGER.debug("Discovered new turnout at address %d", address)
+            runtime_data.turnouts[address] = TurnoutDevice(address=address)
+            async_dispatcher_send(
+                hass,
+                SIGNAL_TURNOUT_DISCOVERED.format(entry_id=entry.entry_id),
+                address,
+            )
+
+        runtime_data.turnouts[address].position = state.position
+
+        async_dispatcher_send(
+            hass,
+            SIGNAL_TURNOUT_STATE_UPDATE.format(
+                entry_id=entry.entry_id, address=address
+            ),
+        )
+
     connection_manager.set_loco_state_callback(handle_loco_state)
+    connection_manager.set_turnout_state_callback(handle_turnout_state)
 
     async def _restore_states(station: Z21Station) -> None:
 

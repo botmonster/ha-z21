@@ -1,10 +1,10 @@
-"""Switch platform for Z21 locomotive functions."""
+"""Switch platform for Z21 locomotive functions and turnouts."""
 
 from __future__ import annotations
 
 from typing import Any
 
-from z21aio import Loco
+from z21aio import Loco, Turnout, TurnoutPosition
 
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.core import HomeAssistant, callback
@@ -12,9 +12,9 @@ from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import Z21ConfigEntry
-from .const import FUNCTION_COUNT, SIGNAL_LOCO_DISCOVERED
-from .entity import Z21LocoEntity
-from .models import LocoDevice, Z21RuntimeData
+from .const import FUNCTION_COUNT, SIGNAL_LOCO_DISCOVERED, SIGNAL_TURNOUT_DISCOVERED
+from .entity import Z21LocoEntity, Z21TurnoutEntity
+from .models import LocoDevice, TurnoutDevice, Z21RuntimeData
 
 PARALLEL_UPDATES = 1
 
@@ -43,6 +43,14 @@ async def async_setup_entry(
             ]
         )
 
+    @callback
+    def _discover_turnout(address: int) -> None:
+        """Handle discovery of new turnout."""
+        turnout_device = runtime_data.turnouts[address]
+        async_add_entities(
+            [TurnoutSwitch(runtime_data, entry.entry_id, turnout_device)]
+        )
+
     # Register for future discoveries
     entry.async_on_unload(
         async_dispatcher_connect(
@@ -51,15 +59,26 @@ async def async_setup_entry(
             _discover_loco,
         )
     )
+    entry.async_on_unload(
+        async_dispatcher_connect(
+            hass,
+            SIGNAL_TURNOUT_DISCOVERED.format(entry_id=entry.entry_id),
+            _discover_turnout,
+        )
+    )
 
     # Add entities for already discovered locomotives
-    entities: list[LocoFunctionSwitch | LocoEStopSwitch] = []
+    entities: list[LocoFunctionSwitch | LocoEStopSwitch | TurnoutSwitch] = []
     for loco_device in runtime_data.locomotives.values():
         entities.append(LocoEStopSwitch(runtime_data, entry.entry_id, loco_device))
         entities.extend(
             LocoFunctionSwitch(runtime_data, entry.entry_id, loco_device, fn_index)
             for fn_index in range(FUNCTION_COUNT)
         )
+    entities.extend(
+        TurnoutSwitch(runtime_data, entry.entry_id, turnout_device)
+        for turnout_device in runtime_data.turnouts.values()
+    )
     async_add_entities(entities)
 
 
@@ -169,3 +188,50 @@ class LocoEStopSwitch(Z21LocoEntity, SwitchEntity):
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         """No-op; estop cannot be cancelled via a DCC command."""
+
+
+class TurnoutSwitch(Z21TurnoutEntity, SwitchEntity):
+    """Switch entity for a DCC turnout (P0 = off, P1 = on)."""
+
+    _attr_has_entity_name = True
+    _attr_translation_key = "turnout"
+    _attr_icon = "mdi:call-split"
+
+    def __init__(
+        self,
+        runtime_data: Z21RuntimeData,
+        entry_id: str,
+        turnout_device: TurnoutDevice,
+    ) -> None:
+        """Initialize the turnout switch."""
+        super().__init__(runtime_data, entry_id, turnout_device)
+        self._attr_unique_id = f"{entry_id}_turnout_{self._address}"
+        self.entity_id = f"switch.z21_turnout_{self._address}"
+        self._turnout: Turnout | None = None
+
+    @callback
+    def _handle_disconnected(self) -> None:
+        """Clear cached turnout controller on disconnect."""
+        self._turnout = None
+        super()._handle_disconnected()
+
+    def _ensure_turnout(self) -> Turnout:
+        """Get or create Turnout controller."""
+        if self._turnout is None:
+            self._turnout = Turnout(self._runtime_data.station, self._address)
+        return self._turnout
+
+    @property
+    def is_on(self) -> bool:
+        """Return True if turnout is in P1 position."""
+        return self._turnout_device.position == TurnoutPosition.P1
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        """Switch turnout to P1."""
+        turnout = self._ensure_turnout()
+        await turnout.switch(TurnoutPosition.P1)
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        """Switch turnout to P0."""
+        turnout = self._ensure_turnout()
+        await turnout.switch(TurnoutPosition.P0)

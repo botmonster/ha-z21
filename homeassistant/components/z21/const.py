@@ -21,5 +21,7 @@ RECONNECT_MAX_DELAY = 600  # seconds cap for exponential backoff
 # Dispatcher signals
 SIGNAL_LOCO_DISCOVERED = f"{DOMAIN}_loco_discovered_{{entry_id}}"
 SIGNAL_LOCO_STATE_UPDATE = f"{DOMAIN}_loco_state_update_{{entry_id}}_{{address}}"
+SIGNAL_TURNOUT_DISCOVERED = f"{DOMAIN}_turnout_discovered_{{entry_id}}"
+SIGNAL_TURNOUT_STATE_UPDATE = f"{DOMAIN}_turnout_state_update_{{entry_id}}_{{address}}"
 SIGNAL_Z21_CONNECTED = f"{DOMAIN}_connected_{{entry_id}}"
 SIGNAL_Z21_DISCONNECTED = f"{DOMAIN}_disconnected_{{entry_id}}"

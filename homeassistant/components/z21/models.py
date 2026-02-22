@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+from z21aio import TurnoutPosition
+
 if TYPE_CHECKING:
     from z21aio import Loco, Z21Station
 
@@ -32,6 +34,14 @@ class LocoDevice:
 
 
 @dataclass
+class TurnoutDevice:
+    """Represents a discovered DCC turnout."""
+
+    address: int
+    position: TurnoutPosition = TurnoutPosition.UNKNOWN
+
+
+@dataclass
 class Z21RuntimeData:
     """Runtime data for Z21 integration."""
 
@@ -39,6 +49,7 @@ class Z21RuntimeData:
     serial_number: int | None = None
     firmware_version: tuple[int, int] | None = None
     locomotives: dict[int, LocoDevice] = field(default_factory=dict)
+    turnouts: dict[int, TurnoutDevice] = field(default_factory=dict)
     available: bool = True
 
     def get_loco_device_id(self, entry_id: str, address: int) -> str:

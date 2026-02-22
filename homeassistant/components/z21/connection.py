@@ -51,6 +51,7 @@ class Z21ConnectionManager:
         self._reconnect_attempts = 0
         self._unavailable_logged = False
         self._loco_state_callback: Callable | None = None
+        self._turnout_state_callback: Callable | None = None
         self._restore_states_callback: (
             Callable[[Z21Station], Awaitable[None]] | None
         ) = None
@@ -89,6 +90,10 @@ class Z21ConnectionManager:
     def set_loco_state_callback(self, loco_state_callback: Callable) -> None:
         """Store the loco state callback for re-registration after reconnect."""
         self._loco_state_callback = loco_state_callback
+
+    def set_turnout_state_callback(self, turnout_state_callback: Callable) -> None:
+        """Store the turnout state callback for re-registration after reconnect."""
+        self._turnout_state_callback = turnout_state_callback
 
     async def _verify_connection(self) -> None:
         """Verify connection is working by sending a ping.
@@ -188,12 +193,15 @@ class Z21ConnectionManager:
                 self._runtime_data.station = await Z21Station.connect(
                     self._host, self._port, keep_alive=False
                 )
-
                 await self._verify_connection()
 
                 if self._loco_state_callback is not None:
                     self._runtime_data.station.subscribe_loco_state(
                         self._loco_state_callback
+                    )
+                if self._turnout_state_callback is not None:
+                    self._runtime_data.station.subscribe_turnout_state(
+                        self._turnout_state_callback
                     )
                 self._mark_available()
 

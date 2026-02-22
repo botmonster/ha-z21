@@ -65,6 +65,7 @@ def mock_z21_station() -> Generator[AsyncMock]:
         station.get_serial_number = AsyncMock(return_value=12345678)
         station.get_firmware_version = AsyncMock(return_value=(1, 30))
         station.subscribe_loco_state = MagicMock()
+        station.subscribe_turnout_state = MagicMock()
         station.close = AsyncMock()
 
         yield station
@@ -94,3 +95,17 @@ def mock_loco() -> Generator[AsyncMock]:
         loco.function_off = AsyncMock()
 
         yield loco
+
+
+@pytest.fixture
+def mock_turnout() -> Generator[AsyncMock]:
+    """Mock a Turnout controller."""
+    with patch(
+        "homeassistant.components.z21.switch.Turnout",
+        autospec=True,
+    ) as mock_turnout_cls:
+        turnout = AsyncMock()
+        mock_turnout_cls.return_value = turnout
+        turnout.switch = AsyncMock()
+
+        yield turnout

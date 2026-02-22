@@ -10,10 +10,11 @@ from homeassistant.helpers.entity import Entity
 from .const import (
     DOMAIN,
     SIGNAL_LOCO_STATE_UPDATE,
+    SIGNAL_TURNOUT_STATE_UPDATE,
     SIGNAL_Z21_CONNECTED,
     SIGNAL_Z21_DISCONNECTED,
 )
-from .models import LocoDevice, Z21RuntimeData
+from .models import LocoDevice, TurnoutDevice, Z21RuntimeData
 
 
 class Z21LocoEntity(Entity):
@@ -72,6 +73,82 @@ class Z21LocoEntity(Entity):
             async_dispatcher_connect(
                 self.hass,
                 SIGNAL_LOCO_STATE_UPDATE.format(
+                    entry_id=self._entry_id,
+                    address=self._address,
+                ),
+                self._handle_state_update,
+            )
+        )
+        self.async_on_remove(
+            async_dispatcher_connect(
+                self.hass,
+                SIGNAL_Z21_CONNECTED.format(entry_id=self._entry_id),
+                self._handle_connected,
+            )
+        )
+        self.async_on_remove(
+            async_dispatcher_connect(
+                self.hass,
+                SIGNAL_Z21_DISCONNECTED.format(entry_id=self._entry_id),
+                self._handle_disconnected,
+            )
+        )
+
+
+class Z21TurnoutEntity(Entity):
+    """Base class for Z21 turnout switch entities."""
+
+    _attr_should_poll = False
+    _attr_has_entity_name = True
+
+    def __init__(
+        self,
+        runtime_data: Z21RuntimeData,
+        entry_id: str,
+        turnout_device: TurnoutDevice,
+    ) -> None:
+        """Initialize the entity."""
+        self._runtime_data = runtime_data
+        self._entry_id = entry_id
+        self._turnout_device = turnout_device
+        self._address = turnout_device.address
+
+        # Attach to the Z21 hub device rather than creating a separate device
+        hub_id = (
+            str(runtime_data.serial_number)
+            if runtime_data.serial_number is not None
+            else entry_id
+        )
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, hub_id)},
+        )
+
+    @property
+    def available(self) -> bool:
+        """Return True if the Z21 station connection is healthy."""
+        return self._runtime_data.available
+
+    @callback
+    def _handle_state_update(self) -> None:
+        """Handle state update from dispatcher."""
+        self.async_write_ha_state()
+
+    @callback
+    def _handle_connected(self) -> None:
+        """Handle Z21 connection restored."""
+        self.async_write_ha_state()
+
+    @callback
+    def _handle_disconnected(self) -> None:
+        """Handle Z21 connection lost."""
+        self.async_write_ha_state()
+
+    async def async_added_to_hass(self) -> None:
+        """Register callbacks when entity is added."""
+        self.async_on_remove(
+            async_dispatcher_connect(
+                self.hass,
+                SIGNAL_TURNOUT_STATE_UPDATE.format(
                     entry_id=self._entry_id,
                     address=self._address,
                 ),
