@@ -81,6 +81,12 @@ class Z21ConnectionManager:
                 await self._reconnect_task
             self._reconnect_task = None
 
+        station = self._runtime_data.station
+        if station is not None:
+            self._runtime_data.station = None
+            with contextlib.suppress(Exception):
+                await station.close()
+
     def set_restore_states_callback(
         self, restore_states_callback: Callable[[Z21Station], Awaitable[None]]
     ) -> None:
@@ -171,16 +177,6 @@ class Z21ConnectionManager:
     async def _reconnect_loop(self) -> None:
         """Attempt reconnection with exponential backoff."""
         while not self._shutting_down:
-            delay = min(
-                RECONNECT_BASE_DELAY * (2**self._reconnect_attempts),
-                RECONNECT_MAX_DELAY,
-            )
-            _LOGGER.debug("Attempting reconnection in %d seconds", delay)
-            await asyncio.sleep(delay)
-
-            if self._shutting_down:
-                break
-
             try:
                 if self._runtime_data.station is not None:
                     await self._runtime_data.station.close()
@@ -205,9 +201,13 @@ class Z21ConnectionManager:
                     )
                 self._mark_available()
 
-                self._reconnect_task = None
-                self._heartbeat_task = None
+                if self._heartbeat_task is not None:
+                    self._heartbeat_task.cancel()
+                    with contextlib.suppress(asyncio.CancelledError):
+                        await self._heartbeat_task
+                    self._heartbeat_task = None
 
+                self._reconnect_task = None
                 await self.start()
                 break
             except TimeoutError:
@@ -231,6 +231,16 @@ class Z21ConnectionManager:
                 )
             except asyncio.CancelledError:
                 _LOGGER.debug("Reconnection attempt got CancelledError")
+                break
+
+            delay = min(
+                RECONNECT_BASE_DELAY * (2 ** (self._reconnect_attempts - 1)),
+                RECONNECT_MAX_DELAY,
+            )
+            _LOGGER.debug("Next reconnection attempt in %d seconds", delay)
+            await asyncio.sleep(delay)
+
+            if self._shutting_down:
                 break
 
         self._reconnect_task = None

@@ -232,6 +232,61 @@ async def test_reconnect_success(
     assert len(signals_received) == 1
 
 
+async def test_reconnect_loop_first_attempt_before_sleep(
+    hass: HomeAssistant,
+    connection_manager: Z21ConnectionManager,
+    runtime_data: Z21RuntimeData,
+) -> None:
+    """Verify reconnect loop attempts connection before sleeping.
+
+    Regression test: previously the loop slept BEFORE the first connection
+    attempt, causing a delay before reconnecting after a config entry reload.
+    """
+    runtime_data.available = False
+
+    call_order: list[str] = []
+    connect_count = 0
+
+    new_station = AsyncMock()
+    new_station.get_serial_number = AsyncMock(return_value=12345678)
+    new_station.subscribe_loco_state = MagicMock()
+    new_station.subscribe_turnout_state = MagicMock()
+
+    async def mock_connect(*args: object, **kwargs: object) -> AsyncMock:
+        nonlocal connect_count
+        connect_count += 1
+        call_order.append("connect")
+        if connect_count == 1:
+            raise TimeoutError  # First attempt fails so a sleep is triggered
+        return new_station
+
+    async def mock_sleep(delay: float) -> None:
+        call_order.append("sleep")
+        # Stop the loop after the first sleep — we only need to verify order
+        connection_manager._shutting_down = True
+
+    with (
+        patch(
+            "homeassistant.components.z21.connection.Z21Station.connect",
+            side_effect=mock_connect,
+        ),
+        patch(
+            "homeassistant.components.z21.connection.asyncio.sleep",
+            side_effect=mock_sleep,
+        ),
+    ):
+        await connection_manager._reconnect_loop()
+
+    # First action must be a connect attempt, not a sleep
+    assert call_order[0] == "connect", (
+        f"Reconnect loop must attempt connection before sleeping, got: {call_order}"
+    )
+    # A sleep must follow the first failed attempt
+    assert len(call_order) >= 2 and call_order[1] == "sleep", (
+        f"Expected sleep after failed connect, got: {call_order}"
+    )
+
+
 async def test_reconnect_exponential_backoff(
     hass: HomeAssistant,
     connection_manager: Z21ConnectionManager,
@@ -282,12 +337,19 @@ async def test_stop_cancels_reconnect_task(
     """Test that stop cancels the reconnect task."""
     # Simulate being in reconnect state
     runtime_data.available = False
-    connection_manager.start_connect()
-    assert connection_manager._reconnect_task is not None
 
-    await connection_manager.stop()
+    with patch(
+        "homeassistant.components.z21.connection.Z21Station.connect",
+        side_effect=TimeoutError,
+    ):
+        connection_manager.start_connect()
+        assert connection_manager._reconnect_task is not None
+
+        await connection_manager.stop()
+
     assert connection_manager._reconnect_task is None
     assert connection_manager._shutting_down is True
+    assert runtime_data.station is None
 
 
 async def test_entity_availability_follows_runtime_data(

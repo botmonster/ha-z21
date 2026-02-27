@@ -129,8 +129,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: Z21ConfigEntry) -> bool:
     connection_manager.set_turnout_state_callback(handle_turnout_state)
 
     async def _restore_states(station: Z21Station) -> None:
-
-        entry.async_on_unload(station.close)
         await _update_station_info(station)
 
         for entity in er.async_entries_for_config_entry(entity_reg, entry.entry_id):
