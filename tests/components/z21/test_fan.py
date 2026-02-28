@@ -36,6 +36,7 @@ async def test_fan_discovery(
     mock_loco_state.speed_percentage = 0.0
     mock_loco_state.reverse = False
     mock_loco_state.functions = [False] * 32
+    mock_loco_state.is_estop = False
 
     callback(mock_loco_state)
     await hass.async_block_till_done()
@@ -65,6 +66,7 @@ async def test_fan_speed_control(
     mock_loco_state.speed_percentage = 0.0
     mock_loco_state.reverse = False
     mock_loco_state.functions = [False] * 32
+    mock_loco_state.is_estop = False
 
     callback(mock_loco_state)
     await hass.async_block_till_done()
@@ -100,6 +102,7 @@ async def test_fan_direction_control(
     mock_loco_state.speed_percentage = 50.0
     mock_loco_state.reverse = False
     mock_loco_state.functions = [False] * 32
+    mock_loco_state.is_estop = False
 
     callback(mock_loco_state)
     await hass.async_block_till_done()
@@ -135,6 +138,7 @@ async def test_fan_turn_off(
     mock_loco_state.speed_percentage = 50.0
     mock_loco_state.reverse = False
     mock_loco_state.functions = [False] * 32
+    mock_loco_state.is_estop = False
 
     callback(mock_loco_state)
     await hass.async_block_till_done()
@@ -170,6 +174,7 @@ async def test_fan_turn_off_reverse(
     mock_loco_state.speed_percentage = 50.0
     mock_loco_state.reverse = True
     mock_loco_state.functions = [False] * 32
+    mock_loco_state.is_estop = False
 
     callback(mock_loco_state)
     await hass.async_block_till_done()
@@ -205,6 +210,7 @@ async def test_fan_state_update(
     mock_loco_state.speed_percentage = 0.0
     mock_loco_state.reverse = False
     mock_loco_state.functions = [False] * 32
+    mock_loco_state.is_estop = False
 
     callback(mock_loco_state)
     await hass.async_block_till_done()
@@ -254,6 +260,7 @@ async def test_fan_turn_on_with_percentage(
     mock_loco_state.speed_percentage = 0.0
     mock_loco_state.reverse = False
     mock_loco_state.functions = [False] * 32
+    mock_loco_state.is_estop = False
 
     callback(mock_loco_state)
     await hass.async_block_till_done()
@@ -289,6 +296,7 @@ async def test_fan_turn_on_without_percentage(
     mock_loco_state.speed_percentage = 0.0
     mock_loco_state.reverse = False
     mock_loco_state.functions = [False] * 32
+    mock_loco_state.is_estop = False
 
     callback(mock_loco_state)
     await hass.async_block_till_done()
@@ -321,6 +329,7 @@ async def test_fan_turn_on_resumes_last_speed(
     mock_loco_state = MagicMock()
     mock_loco_state.address = 3
     mock_loco_state.functions = [False] * 32
+    mock_loco_state.is_estop = False
 
     # Locomotive runs at 75% forward — sets last_speed_percentage to 75
     mock_loco_state.speed_percentage = 75.0
@@ -364,6 +373,7 @@ async def test_fan_turn_on_resumes_last_speed_in_reverse(
     mock_loco_state = MagicMock()
     mock_loco_state.address = 3
     mock_loco_state.functions = [False] * 32
+    mock_loco_state.is_estop = False
 
     # Locomotive runs at 60% in reverse — sets last_speed_percentage to 60
     mock_loco_state.speed_percentage = 60.0
@@ -406,6 +416,7 @@ async def test_fan_direction_preserved_at_zero_speed(
     mock_loco_state = MagicMock()
     mock_loco_state.address = 3
     mock_loco_state.functions = [False] * 32
+    mock_loco_state.is_estop = False
 
     # Discover loco moving in reverse
     mock_loco_state.speed_percentage = 50.0
@@ -424,3 +435,105 @@ async def test_fan_direction_preserved_at_zero_speed(
     state = hass.states.get(entity_id)
     assert state.state == STATE_OFF
     assert state.attributes.get(ATTR_DIRECTION) == DIRECTION_REVERSE
+
+
+async def test_fan_stop_preserves_last_speed(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_z21_station: AsyncMock,
+    mock_loco: AsyncMock,
+) -> None:
+    """Test that normal stop preserves last non-zero speed for next turn on."""
+    mock_config_entry.add_to_hass(hass)
+    await hass.config_entries.async_setup(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    callback = mock_z21_station.subscribe_loco_state.call_args[0][0]
+    mock_loco_state = MagicMock()
+    mock_loco_state.address = 3
+    mock_loco_state.functions = [False] * 32
+    mock_loco_state.is_estop = False
+
+    # Locomotive runs at 75% forward
+    mock_loco_state.speed_percentage = 75.0
+    mock_loco_state.reverse = False
+    callback(mock_loco_state)
+    await hass.async_block_till_done()
+
+    # Normal stop — speed drops to 0
+    mock_loco_state.speed_percentage = 0.0
+    mock_loco_state.reverse = None
+    callback(mock_loco_state)
+    await hass.async_block_till_done()
+
+    entity_id = "fan.locomotive_3"
+    state = hass.states.get(entity_id)
+    assert state.state == STATE_OFF
+
+    # Turn on without percentage — must resume at 75%
+    await hass.services.async_call(
+        FAN_DOMAIN,
+        SERVICE_TURN_ON,
+        {ATTR_ENTITY_ID: entity_id},
+        blocking=True,
+    )
+
+    mock_loco.drive.assert_called_with(75, reverse=False)
+
+
+async def test_fan_estop_preserves_last_speed(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_z21_station: AsyncMock,
+    mock_loco: AsyncMock,
+) -> None:
+    """Test that emergency stop does not overwrite last non-zero speed.
+
+    When estop is issued the Z21 station broadcasts speed_percentage > 0
+    (the estop sentinel value). This must NOT update last_speed_percentage,
+    so the next turn-on resumes the real previous speed.
+    """
+    mock_config_entry.add_to_hass(hass)
+    await hass.config_entries.async_setup(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    callback = mock_z21_station.subscribe_loco_state.call_args[0][0]
+    mock_loco_state = MagicMock()
+    mock_loco_state.address = 3
+    mock_loco_state.functions = [False] * 32
+    mock_loco_state.is_estop = False
+
+    # Locomotive runs at 75% forward — last_speed_percentage becomes 75
+    mock_loco_state.speed_percentage = 75.0
+    mock_loco_state.reverse = False
+    callback(mock_loco_state)
+    await hass.async_block_till_done()
+
+    # Emergency stop — Z21 broadcasts the estop sentinel (speed_value=1, 128-step mode)
+    # speed_percentage = (1/128)*100 = 0.78125, is_estop = True
+    mock_loco_state.speed_percentage = (1 / 128) * 100.0
+    mock_loco_state.is_estop = True
+    mock_loco_state.reverse = False
+    callback(mock_loco_state)
+    await hass.async_block_till_done()
+
+    # Loco settles to zero after estop
+    mock_loco_state.speed_percentage = 0.0
+    mock_loco_state.is_estop = False
+    mock_loco_state.reverse = None
+    callback(mock_loco_state)
+    await hass.async_block_till_done()
+
+    entity_id = "fan.locomotive_3"
+    state = hass.states.get(entity_id)
+    assert state.state == STATE_OFF
+
+    # Turn on without percentage — must resume at 75%, not the estop sentinel
+    await hass.services.async_call(
+        FAN_DOMAIN,
+        SERVICE_TURN_ON,
+        {ATTR_ENTITY_ID: entity_id},
+        blocking=True,
+    )
+
+    mock_loco.drive.assert_called_with(75, reverse=False)
